@@ -83,6 +83,10 @@ A comprehensive RESTful API for an e-commerce clothing shop built with Node.js, 
    npm start
    ```
 
+6. **To migrate tables into your databases**
+   ```bash
+   npx ts-node src/config/init-db.ts
+
 6. **Seed the database** (optional)
    ```bash
    npm run seed
@@ -188,6 +192,9 @@ npm run build
 
 # Run production build
 npm start
+
+# To migrate tables into your database
+npx ts-node src/config/init-db.ts
 
 # Seed database
 npm run seed

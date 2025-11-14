@@ -87,7 +87,7 @@ A comprehensive RESTful API for an e-commerce clothing shop built with Node.js, 
    ```bash
    npx ts-node src/config/init-db.ts
 
-6. **Seed the database** (optional)
+7. **Seed the database** (optional)
    ```bash
    npm run seed
    ```

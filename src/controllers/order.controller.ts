@@ -1,27 +1,34 @@
-import { Response } from 'express';
-import { pool } from '../config/database';
-import { Order, OrderItem, OrderWithItems } from '../models/order.model';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
-import { body, validationResult } from 'express-validator';
-import { AuthRequest } from '../middleware/auth.middleware';
+import { Response } from "express";
+import { pool } from "../config/database";
+import { Order, OrderItem, OrderWithItems } from "../models/order.model";
+import { RowDataPacket, ResultSetHeader } from "mysql2";
+import { body, validationResult } from "express-validator";
+import { AuthRequest } from "../middleware/auth.middleware";
 
 export const orderValidation = [
-  body('shippingAddress').notEmpty().withMessage('Shipping address is required'),
-  body('shippingCity').notEmpty().withMessage('Shipping city is required'),
-  body('shippingPostalCode').notEmpty().withMessage('Postal code is required'),
-  body('shippingCountry').notEmpty().withMessage('Country is required'),
+  body("shippingAddress")
+    .notEmpty()
+    .withMessage("Shipping address is required"),
+  body("shippingCity").notEmpty().withMessage("Shipping city is required"),
+  body("shippingPostalCode").notEmpty().withMessage("Postal code is required"),
+  body("shippingCountry").notEmpty().withMessage("Country is required"),
 ];
 
 export const createOrder = async (req: AuthRequest, res: Response) => {
   const connection = await pool.getConnection();
-  
+
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { shippingAddress, shippingCity, shippingPostalCode, shippingCountry } = req.body;
+    const {
+      shippingAddress,
+      shippingCity,
+      shippingPostalCode,
+      shippingCountry,
+    } = req.body;
 
     await connection.beginTransaction();
 
@@ -36,7 +43,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 
     if (cartItems.length === 0) {
       await connection.rollback();
-      return res.status(400).json({ error: 'Cart is empty' });
+      return res.status(400).json({ error: "Cart is empty" });
     }
 
     // Verify stock and calculate total
@@ -44,7 +51,11 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     for (const item of cartItems) {
       if (item.stock < item.quantity) {
         await connection.rollback();
-        return res.status(400).json({ error: `Insufficient stock for product ID ${item.productId}` });
+        return res
+          .status(400)
+          .json({
+            error: `Insufficient stock for product ID ${item.productId}`,
+          });
       }
       totalAmount += item.price * item.quantity;
     }
@@ -53,7 +64,14 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     const [orderResult] = await connection.query<ResultSetHeader>(
       `INSERT INTO orders (userId, totalAmount, status, shippingAddress, shippingCity, shippingPostalCode, shippingCountry)
        VALUES (?, ?, 'pending', ?, ?, ?, ?)`,
-      [req.userId, totalAmount, shippingAddress, shippingCity, shippingPostalCode, shippingCountry]
+      [
+        req.userId,
+        totalAmount,
+        shippingAddress,
+        shippingCity,
+        shippingPostalCode,
+        shippingCountry,
+      ]
     );
 
     const orderId = orderResult.insertId;
@@ -63,20 +81,26 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       await connection.query(
         `INSERT INTO order_items (orderId, productId, quantity, price, size, color)
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [orderId, item.productId, item.quantity, item.price, item.size || null, item.color || null]
+        [
+          orderId,
+          item.productId,
+          item.quantity,
+          item.price,
+          item.size || null,
+          item.color || null,
+        ]
       );
 
       await connection.query(
-        'UPDATE products SET stock = stock - ? WHERE id = ?',
+        "UPDATE products SET stock = stock - ? WHERE id = ?",
         [item.quantity, item.productId]
       );
     }
 
     // Clear cart
-    await connection.query(
-      'DELETE FROM cart_items WHERE userId = ?',
-      [req.userId]
-    );
+    await connection.query("DELETE FROM cart_items WHERE userId = ?", [
+      req.userId,
+    ]);
 
     await connection.commit();
 
@@ -109,8 +133,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     res.status(201).json(order);
   } catch (error) {
     await connection.rollback();
-    console.error('Create order error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   } finally {
     connection.release();
   }
@@ -141,15 +164,14 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
       [req.userId]
     );
 
-    const ordersWithItems = orders.map(order => ({
+    const ordersWithItems = orders.map((order) => ({
       ...order,
       items: JSON.parse(order.items),
     }));
 
     res.json(ordersWithItems);
   } catch (error) {
-    console.error('Get orders error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 };
 
@@ -180,7 +202,7 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
     );
 
     if (orders.length === 0) {
-      return res.status(404).json({ error: 'Order not found' });
+      return res.status(404).json({ error: "Order not found" });
     }
 
     const order = orders[0];
@@ -188,8 +210,7 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
 
     res.json(order);
   } catch (error) {
-    console.error('Get order error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 };
 
@@ -198,28 +219,33 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    const validStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+    const validStatuses = [
+      "pending",
+      "processing",
+      "shipped",
+      "delivered",
+      "cancelled",
+    ];
     if (!validStatuses.includes(status)) {
-      return res.status(400).json({ error: 'Invalid status' });
+      return res.status(400).json({ error: "Invalid status" });
     }
 
     const [result] = await pool.query<ResultSetHeader>(
-      'UPDATE orders SET status = ? WHERE id = ? AND userId = ?',
+      "UPDATE orders SET status = ? WHERE id = ? AND userId = ?",
       [status, id, req.userId]
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ error: 'Order not found' });
+      return res.status(404).json({ error: "Order not found" });
     }
 
     const [orders] = await pool.query<RowDataPacket[]>(
-      'SELECT * FROM orders WHERE id = ?',
+      "SELECT * FROM orders WHERE id = ?",
       [id]
     );
 
     res.json(orders[0]);
   } catch (error) {
-    console.error('Update order status error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: "Server error" });
   }
 };

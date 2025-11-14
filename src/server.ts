@@ -45,7 +45,6 @@ app.use((req: Request, res: Response) => {
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error("Error:", err);
   res.status(500).json({
     error:
       config.nodeEnv === "production" ? "Internal server error" : err.message,
@@ -58,7 +57,6 @@ const startServer = async () => {
     // Test database connection
     const connected = await testConnection();
     if (!connected) {
-      console.error("Failed to connect to database. Exiting...");
       process.exit(1);
     }
 
@@ -88,7 +86,6 @@ const startServer = async () => {
       `);
     });
   } catch (error) {
-    console.error("Failed to start server:", error);
     process.exit(1);
   }
 };

@@ -23,7 +23,6 @@ async function createDatabase() {
     await connection.end();
     process.exit(0);
   } catch (error) {
-    console.error("❌ Error creating database:", error);
     process.exit(1);
   }
 }

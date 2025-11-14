@@ -18,7 +18,6 @@ export const testConnection = async () => {
     connection.release();
     return true;
   } catch (error) {
-    console.error("❌ Database connection failed:", error);
     return false;
   }
 };

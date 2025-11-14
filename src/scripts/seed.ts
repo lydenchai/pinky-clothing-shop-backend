@@ -464,7 +464,6 @@ export const seed = async () => {
       );
     }
   } catch (error) {
-    console.error("❌ Error seeding database:", error);
     throw error;
   } finally {
     connection.release();
@@ -478,7 +477,6 @@ if (require.main === module) {
       process.exit(0);
     })
     .catch((error) => {
-      console.error("Seeding failed:", error);
       process.exit(1);
     });
 }

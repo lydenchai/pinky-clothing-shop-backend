@@ -93,7 +93,7 @@ A comprehensive RESTful API for an e-commerce clothing shop built with Node.js, 
    ```
    
    This will create sample products and a demo user:
-   - Email: `demo@example.com`
+   - Email: `pinky@example.com`
    - Password: `password123`
 
 ## API Endpoints

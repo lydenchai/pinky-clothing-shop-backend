@@ -414,6 +414,7 @@ const seedUsers = [
     postalCode: "12000",
     country: "Cambodia",
     phone: "+85512345678",
+    role: "admin",
   },
 ];
 
@@ -429,8 +430,8 @@ export const seed = async () => {
       const hashedPassword = await bcrypt.hash(user.password, 10);
 
       await connection.query<ResultSetHeader>(
-        `INSERT INTO users (email, password, firstName, lastName, address, city, postalCode, country, phone)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO users (email, password, firstName, lastName, address, city, postalCode, country, phone, role)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE email = email`,
         [
           user.email,
@@ -442,6 +443,7 @@ export const seed = async () => {
           user.postalCode,
           user.country,
           user.phone,
+          user.role,
         ]
       );
     }

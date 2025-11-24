@@ -9,6 +9,7 @@ export interface User {
   postalCode?: string;
   country?: string;
   phone?: string;
+  role?: 'admin' | 'customer';
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -23,6 +24,7 @@ export interface UserResponse {
   postalCode?: string;
   country?: string;
   phone?: string;
+  role?: 'admin' | 'customer';
   createdAt?: Date;
   updatedAt?: Date;
 }

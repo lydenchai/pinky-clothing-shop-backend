@@ -56,8 +56,8 @@ export const register = async (req: Request, res: Response) => {
 
     // Create user
     const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO users (email, password, firstName, lastName, address, city, postalCode, country, phone)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO users (email, password, firstName, lastName, address, city, postalCode, country, phone, role)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'customer')`,
       [
         email,
         hashedPassword,
@@ -80,7 +80,7 @@ export const register = async (req: Request, res: Response) => {
 
     // Get created user
     const [users] = await pool.query<RowDataPacket[]>(
-      "SELECT id, email, firstName, lastName, address, city, postalCode, country, phone, createdAt FROM users WHERE id = ?",
+      "SELECT id, email, firstName, lastName, address, city, postalCode, country, phone, role, createdAt FROM users WHERE id = ?",
       [userId]
     );
 
@@ -101,13 +101,17 @@ export const login = async (req: Request, res: Response) => {
 
     const { email, password } = req.body;
 
+    // Debug: log login attempt (do not log password)
+    console.log(`Login attempt for email: ${email}`);
     // Find user
     const [users] = await pool.query<RowDataPacket[]>(
-      "SELECT id, email, password, firstName, lastName, address, city, postalCode, country, phone FROM users WHERE email = ?",
+      "SELECT id, email, password, firstName, lastName, address, city, postalCode, country, phone, role FROM users WHERE email = ?",
       [email]
     );
 
+    console.log('DB query returned user count:', (users as any[]).length);
     if (users.length === 0) {
+      console.log(`Login failed: User not found for email ${email}`);
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
@@ -116,6 +120,7 @@ export const login = async (req: Request, res: Response) => {
     // Verify password
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
+      console.log(`Login failed: Invalid password for user ${email}`);
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
@@ -129,14 +134,21 @@ export const login = async (req: Request, res: Response) => {
 
     res.json({ token, user: userWithoutPassword });
   } catch (error) {
-    res.status(500).json({ error: "Server error during login" });
+    // Log the error for debugging (do not expose stack in production)
+    console.error('Error in login controller:', error);
+    const message = (error as Error).message || 'Server error during login';
+    if (config.nodeEnv === 'production') {
+      res.status(500).json({ error: 'Server error during login' });
+    } else {
+      res.status(500).json({ error: 'Server error during login', details: message });
+    }
   }
 };
 
 export const getProfile = async (req: AuthRequest, res: Response) => {
   try {
     const [users] = await pool.query<RowDataPacket[]>(
-      "SELECT id, email, firstName, lastName, address, city, postalCode, country, phone, createdAt FROM users WHERE id = ?",
+      "SELECT id, email, firstName, lastName, address, city, postalCode, country, phone, role, createdAt FROM users WHERE id = ?",
       [req.userId]
     );
 
@@ -171,7 +183,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
     );
 
     const [users] = await pool.query<RowDataPacket[]>(
-      "SELECT id, email, firstName, lastName, address, city, postalCode, country, phone FROM users WHERE id = ?",
+      "SELECT id, email, firstName, lastName, address, city, postalCode, country, phone, role FROM users WHERE id = ?",
       [req.userId]
     );
 

@@ -3,20 +3,39 @@ import cors from "cors";
 import { config } from "./config";
 import { testConnection } from "./config/database";
 import { initializeDatabase } from "./config/init-db";
+import { ensureAdminUser } from "./scripts/ensure-admin-user";
+import { seed } from "./scripts/seed";
 
 // Routes
 import authRoutes from "./routes/auth.routes";
 import productRoutes from "./routes/product.routes";
 import cartRoutes from "./routes/cart.routes";
 import orderRoutes from "./routes/order.routes";
+import userRoutes from "./routes/user.routes";
 
 const app = express();
 
 // Middleware
+// Configure CORS to validate origin against an allow-list and to expose headers
+const allowedOrigins = Array.isArray(config.cors.origin)
+  ? config.cors.origin
+  : [config.cors.origin];
+
 app.use(
   cors({
-    origin: config.cors.origin,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (e.g., mobile apps, curl, server-to-server)
+      if (!origin) return callback(null, true);
+      // In development allow any origin to simplify local testing
+      if (config.nodeEnv !== 'production') return callback(null, true);
+      // Allow if origin is explicitly in the allow-list or allow-list contains '*'
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+        return callback(null, true);
+      }
+      return callback(new Error('CORS policy: Origin not allowed'));
+    },
     credentials: true,
+    exposedHeaders: ['Authorization'],
   })
 );
 app.use(express.json());
@@ -37,6 +56,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/users", userRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
@@ -62,6 +82,27 @@ const startServer = async () => {
 
     // Initialize database tables
     await initializeDatabase();
+
+    // In development, ensure an admin user exists automatically
+    if (config.nodeEnv !== 'production') {
+      try {
+        await ensureAdminUser();
+        console.log('Ensured admin user exists.');
+      } catch (err) {
+        console.error('Failed to ensure admin user:', err);
+      }
+
+      // Optionally run seed when RUN_SEED=true
+      if (process.env.RUN_SEED === 'true') {
+        try {
+          console.log('RUN_SEED=true — running seed script...');
+          await seed();
+          console.log('Seed completed.');
+        } catch (err) {
+          console.error('Seeding failed:', err);
+        }
+      }
+    }
 
     // Start listening
     app.listen(config.port, () => {

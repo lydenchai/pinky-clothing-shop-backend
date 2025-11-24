@@ -17,11 +17,29 @@ export const initializeDatabase = async () => {
         postalCode VARCHAR(20),
         country VARCHAR(100),
         phone VARCHAR(20),
+        role ENUM('admin', 'customer') DEFAULT 'customer',
         createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_email (email)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
+    // Ensure `role` column exists on older databases where it may be missing
+    try {
+      await connection.query(
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS role ENUM('admin','customer') DEFAULT 'customer'`
+      );
+    } catch (err) {
+      // Some MySQL versions may not support IF NOT EXISTS; fallback to checking INFORMATION_SCHEMA
+      const [rows] = await connection.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'role'`
+      );
+      if ((rows as any[]).length === 0) {
+        await connection.query(
+          `ALTER TABLE users ADD COLUMN role ENUM('admin','customer') DEFAULT 'customer'`
+        );
+      }
+    }
 
     // Create products table
     await connection.query(`

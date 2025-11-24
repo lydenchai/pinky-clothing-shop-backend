@@ -34,77 +34,91 @@ A comprehensive RESTful API for an e-commerce clothing shop built with Node.js, 
 ## Installation
 
 1. **Clone the repository**
+
    ```bash
    cd pinky-clothing-shop-backend
    ```
 
 2. **Install dependencies**
+
    ```bash
    npm install
    ```
 
 3. **Set up environment variables**
+
    ```bash
    copy .env.example .env
    ```
-   
+
    Edit `.env` and configure your settings:
+
    ```env
    PORT=3000
    NODE_ENV=development
-   
+
    DB_HOST=localhost
    DB_PORT=3306
    DB_USER=root
    DB_PASSWORD=your_password
    DB_NAME=pinky_clothing_shop
-   
+
    JWT_SECRET=your_secret_key
    JWT_EXPIRES_IN=7d
-   
+
    CORS_ORIGIN=http://localhost:4200
    ```
 
 4. **Create MySQL database**
+
    ```sql
    CREATE DATABASE pinky_clothing_shop;
    ```
 
 5. **Run the application**
-   
+
    Development mode (with auto-reload):
+
    ```bash
    npm run dev
    ```
-   
+
    Production mode:
+
    ```bash
    npm run build
    npm start
    ```
 
 6. **To migrate tables into your databases**
+
    ```bash
    npx ts-node src/config/init-db.ts
 
+   ```
+
 7. **Seed the database** (optional)
+
    ```bash
    npm run seed
    ```
-   
+
    This will create sample products and a demo user:
-   - Email: `demo@example.com`
+
+   - Email: `pinky@example.com`
    - Password: `password123`
 
 ## API Endpoints
 
 ### Authentication
+
 - `POST /api/auth/register` - Register new user
 - `POST /api/auth/login` - Login user
 - `GET /api/auth/profile` - Get user profile (requires auth)
 - `PUT /api/auth/profile` - Update user profile (requires auth)
 
 ### Products
+
 - `GET /api/products` - Get all products (supports filtering)
 - `GET /api/products/:id` - Get product by ID
 - `GET /api/products/categories` - Get all categories
@@ -113,6 +127,7 @@ A comprehensive RESTful API for an e-commerce clothing shop built with Node.js, 
 - `DELETE /api/products/:id` - Delete product (requires auth)
 
 ### Cart
+
 - `GET /api/cart` - Get user's cart (requires auth)
 - `POST /api/cart` - Add item to cart (requires auth)
 - `PUT /api/cart/:id` - Update cart item (requires auth)
@@ -120,6 +135,7 @@ A comprehensive RESTful API for an e-commerce clothing shop built with Node.js, 
 - `DELETE /api/cart` - Clear cart (requires auth)
 
 ### Orders
+
 - `POST /api/orders` - Create order from cart (requires auth)
 - `GET /api/orders` - Get user's orders (requires auth)
 - `GET /api/orders/:id` - Get order by ID (requires auth)
@@ -128,26 +144,31 @@ A comprehensive RESTful API for an e-commerce clothing shop built with Node.js, 
 ## Database Schema
 
 ### Users Table
+
 - id, email, password, firstName, lastName
 - address, city, postalCode, country, phone
 - createdAt, updatedAt
 
 ### Products Table
+
 - id, name, description, price, category
 - imageUrl, stock, sizes, colors
 - createdAt, updatedAt
 
 ### Cart Items Table
+
 - id, userId, productId, quantity
 - size, color
 - createdAt, updatedAt
 
 ### Orders Table
+
 - id, userId, totalAmount, status
 - shippingAddress, shippingCity, shippingPostalCode, shippingCountry
 - createdAt, updatedAt
 
 ### Order Items Table
+
 - id, orderId, productId, quantity, price
 - size, color
 
@@ -203,6 +224,7 @@ npm run seed
 ## Error Handling
 
 The API uses standard HTTP status codes:
+
 - `200` - Success
 - `201` - Created
 - `400` - Bad Request

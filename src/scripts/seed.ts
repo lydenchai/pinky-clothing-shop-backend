@@ -350,6 +350,11 @@ const descriptions = [
   "Crafted with attention to every detail",
   "Elevate your style with this essential piece",
   "Comfort and style in perfect harmony",
+  "Designed for the modern lifestyle",
+  "Experience the perfect blend of style and comfort",
+  "Made with high-quality sustainable materials",
+  "The perfect choice for any occasion",
+  "Upgrade your wardrobe with this essential item",
 ];
 
 function generateProducts(count: number = 100) {
@@ -373,7 +378,7 @@ function generateProducts(count: number = 100) {
       const template = templates[i % templates.length];
       const adjective =
         template.adjectives[
-          Math.floor(Math.random() * template.adjectives.length)
+        Math.floor(Math.random() * template.adjectives.length)
         ];
       const description =
         descriptions[Math.floor(Math.random() * descriptions.length)];
@@ -387,9 +392,8 @@ function generateProducts(count: number = 100) {
         : imagesArr;
       products.push({
         name: `${adjective} ${template.name}`,
-        description: `${description} - ${
-          demographic.charAt(0).toUpperCase() + demographic.slice(1)
-        }'s ${productType}`,
+        description: `${description} - ${demographic.charAt(0).toUpperCase() + demographic.slice(1)
+          }'s ${productType}`,
         price: price,
         category: demographic,
         imageUrl: imageUrl,
@@ -422,10 +426,14 @@ export const seed = async () => {
   const connection = await pool.getConnection();
 
   try {
+    console.log("Starting seed process...");
+
     // Generate products
     const seedProducts = generateProducts(100);
+    console.log(`Generated ${seedProducts.length} products.`);
 
     // Seed users
+    console.log("Seeding users...");
     for (const user of seedUsers) {
       const hashedPassword = await bcrypt.hash(user.password, 10);
 
@@ -447,8 +455,10 @@ export const seed = async () => {
         ]
       );
     }
+    console.log("Users seeded.");
 
     // Seed products
+    console.log("Seeding products...");
     for (const product of seedProducts) {
       await connection.query<ResultSetHeader>(
         `INSERT INTO products (name, description, price, category, imageUrl, stock, sizes, colors)
@@ -465,7 +475,11 @@ export const seed = async () => {
         ]
       );
     }
+    console.log("Products seeded.");
+
+    console.log("Seed completed successfully.");
   } catch (error) {
+    console.error("Seed failed:", error);
     throw error;
   } finally {
     connection.release();
@@ -479,6 +493,7 @@ if (require.main === module) {
       process.exit(0);
     })
     .catch((error) => {
+      console.error(error);
       process.exit(1);
     });
 }

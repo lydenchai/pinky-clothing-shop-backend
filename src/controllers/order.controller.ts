@@ -1,6 +1,5 @@
 import { Response } from "express";
 import { pool } from "../config/database";
-import { Order, OrderItem, OrderWithItems } from "../models/order.model";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { body, validationResult } from "express-validator";
 import { AuthRequest } from "../middleware/auth.middleware";
@@ -51,11 +50,9 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     for (const item of cartItems) {
       if (item.stock < item.quantity) {
         await connection.rollback();
-        return res
-          .status(400)
-          .json({
-            error: `Insufficient stock for product ID ${item.productId}`,
-          });
+        return res.status(400).json({
+          error: `Insufficient stock for product ID ${item.productId}`,
+        });
       }
       totalAmount += item.price * item.quantity;
     }
@@ -231,7 +228,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.query<ResultSetHeader>(
-      "UPDATE orders SET status = ? WHERE id = ? AND userId = ?",
+      "UPDATE orders SET status = ?, updatedAt = NOW() WHERE id = ? AND userId = ?",
       [status, id, req.userId]
     );
 
@@ -245,6 +242,96 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     );
 
     res.json(orders[0]);
+  } catch (error) {
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+// Validation for order summary (same as order creation, but no DB write)
+export const orderSummaryValidation = [
+  body("shippingAddress")
+    .notEmpty()
+    .withMessage("Shipping address is required"),
+  body("shippingCity").notEmpty().withMessage("Shipping city is required"),
+  body("shippingPostalCode").notEmpty().withMessage("Postal code is required"),
+  body("shippingCountry").notEmpty().withMessage("Country is required"),
+];
+
+// POST /orders/summary: Validate cart, calculate totals, return summary (no DB write)
+export const orderSummary = async (req: AuthRequest, res: Response) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const {
+      shippingAddress,
+      shippingCity,
+      shippingPostalCode,
+      shippingCountry,
+    } = req.body;
+
+    // Get cart items
+    const [cartItems] = await pool.query<RowDataPacket[]>(
+      `SELECT ci.productId, ci.quantity, ci.size, ci.color, p.price, p.stock, p.name as productName, p.imageUrl as productImage
+       FROM cart_items ci
+       JOIN products p ON ci.productId = p.id
+       WHERE ci.userId = ?`,
+      [req.userId]
+    );
+
+    if (cartItems.length === 0) {
+      return res.status(400).json({ error: "Cart is empty" });
+    }
+
+    // Validate stock and calculate totals
+    let subtotal = 0;
+    let outOfStock: any[] = [];
+    const items = cartItems.map((item: any) => {
+      if (item.stock < item.quantity) {
+        outOfStock.push({
+          productId: item.productId,
+          productName: item.productName,
+        });
+      }
+      subtotal += item.price * item.quantity;
+      return {
+        productId: item.productId,
+        productName: item.productName,
+        productImage: item.productImage,
+        quantity: item.quantity,
+        price: item.price,
+        size: item.size,
+        color: item.color,
+        stock: item.stock,
+      };
+    });
+
+    if (outOfStock.length > 0) {
+      return res
+        .status(400)
+        .json({ error: "Some items are out of stock", outOfStock });
+    }
+
+    // Calculate shipping (example: free over $100, else $10)
+    const shipping = subtotal > 100 ? 0 : 10;
+    const tax = subtotal * 0.08;
+    const total = subtotal + shipping + tax;
+
+    const summary = {
+      items,
+      subtotal,
+      shipping,
+      tax,
+      total,
+      shippingAddress,
+      shippingCity,
+      shippingPostalCode,
+      shippingCountry,
+    };
+
+    res.json(summary);
   } catch (error) {
     res.status(500).json({ error: "Server error" });
   }

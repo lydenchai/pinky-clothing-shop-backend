@@ -1,6 +1,5 @@
 import { Response } from "express";
 import { pool } from "../config/database";
-import { CartItem, CartItemWithProduct } from "../models/cart.model";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { body, validationResult } from "express-validator";
 import { AuthRequest } from "../middleware/auth.middleware";

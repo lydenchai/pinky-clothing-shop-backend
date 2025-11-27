@@ -7,6 +7,7 @@ const router = Router();
 // All order routes require authentication
 router.use(authenticate);
 
+router.post('/summary', orderController.orderSummaryValidation, orderController.orderSummary);
 router.post('/', orderController.orderValidation, orderController.createOrder);
 router.get('/', orderController.getOrders);
 router.get('/:id', orderController.getOrderById);

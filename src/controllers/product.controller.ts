@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
 import { pool } from "../config/database";
-import { Product, ProductFilter } from "../models/product.model";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { body, validationResult } from "express-validator";
 import { AuthRequest } from "../middleware/auth.middleware";

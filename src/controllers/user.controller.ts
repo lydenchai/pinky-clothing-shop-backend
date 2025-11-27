@@ -12,7 +12,8 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
     const itemsPerPage = parseInt(limit as string) || 15;
     const offset = (currentPage - 1) * itemsPerPage;
 
-    let query = "SELECT id, email, firstName, lastName, address, city, country, phone, createdAt FROM users WHERE 1=1";
+    let query =
+      "SELECT id, email, firstName, lastName, address, city, country, phone, role, createdAt FROM users WHERE 1=1";
     const params: any[] = [];
 
     if (search) {
@@ -22,7 +23,10 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
     }
 
     // Get total count for pagination
-    const countQuery = query.replace("SELECT id, email, firstName, lastName, address, city, country, phone, createdAt", "SELECT COUNT(*) as total");
+    const countQuery = query.replace(
+      "SELECT id, email, firstName, lastName, address, city, country, phone, createdAt",
+      "SELECT COUNT(*) as total"
+    );
     const [countResult] = await pool.query<RowDataPacket[]>(countQuery, params);
     const totalItems = countResult[0].total;
     const totalPages = Math.ceil(totalItems / itemsPerPage);
@@ -63,6 +67,26 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
     }
 
     res.json({ message: "User deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+export const updateUserRole = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body;
+    if (!["admin", "customer"].includes(role)) {
+      return res.status(400).json({ error: "Invalid role" });
+    }
+    const [result] = await pool.query<ResultSetHeader>(
+      "UPDATE users SET role = ? WHERE id = ?",
+      [role, id]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    res.json({ message: "Role updated successfully" });
   } catch (error) {
     res.status(500).json({ error: "Server error" });
   }

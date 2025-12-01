@@ -12,6 +12,8 @@ import productRoutes from "./routes/product.routes";
 import cartRoutes from "./routes/cart.routes";
 import orderRoutes from "./routes/order.routes";
 import userRoutes from "./routes/user.routes";
+import inventoryRoutes from "./routes/inventory.routes";
+import analyticsRoutes from "./routes/analytics.routes";
 
 const app = express();
 
@@ -27,15 +29,15 @@ app.use(
       // Allow requests with no origin (e.g., mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
       // In development allow any origin to simplify local testing
-      if (config.nodeEnv !== 'production') return callback(null, true);
+      if (config.nodeEnv !== "production") return callback(null, true);
       // Allow if origin is explicitly in the allow-list or allow-list contains '*'
-      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
         return callback(null, true);
       }
-      return callback(new Error('CORS policy: Origin not allowed'));
+      return callback(new Error("CORS policy: Origin not allowed"));
     },
     credentials: true,
-    exposedHeaders: ['Authorization'],
+    exposedHeaders: ["Authorization"],
   })
 );
 app.use(express.json());
@@ -56,7 +58,10 @@ app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
+
 app.use("/api/users", userRoutes);
+app.use("/api/inventory", inventoryRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
@@ -67,7 +72,9 @@ app.use((req: Request, res: Response) => {
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   res.status(500).json({
     error:
-      config.nodeEnv === "production" ? "Internal server error" : err.message,
+      config.nodeEnv === "production"
+        ? "Internal Internal Server Error"
+        : err.message,
   });
 });
 
@@ -84,22 +91,22 @@ const startServer = async () => {
     await initializeDatabase();
 
     // In development, ensure an admin user exists automatically
-    if (config.nodeEnv !== 'production') {
+    if (config.nodeEnv !== "production") {
       try {
         await ensureAdminUser();
-        console.log('Ensured admin user exists.');
+        console.log("Ensured admin user exists.");
       } catch (err) {
-        console.error('Failed to ensure admin user:', err);
+        console.error("Failed to ensure admin user:", err);
       }
 
       // Optionally run seed when RUN_SEED=true
-      if (process.env.RUN_SEED === 'true') {
+      if (process.env.RUN_SEED === "true") {
         try {
-          console.log('RUN_SEED=true — running seed script...');
+          console.log("RUN_SEED=true — running seed script...");
           await seed();
-          console.log('Seed completed.');
+          console.log("Seed completed.");
         } catch (err) {
-          console.error('Seeding failed:', err);
+          console.error("Seeding failed:", err);
         }
       }
     }

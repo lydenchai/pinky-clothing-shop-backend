@@ -26,7 +26,7 @@ export const getCart = async (req: AuthRequest, res: Response) => {
 
     res.json(items);
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
@@ -104,7 +104,7 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
 
     res.status(201).json(newItems[0]);
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
@@ -154,7 +154,7 @@ export const updateCartItem = async (req: AuthRequest, res: Response) => {
 
     res.json(updatedItems[0]);
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
@@ -188,7 +188,7 @@ export const removeFromCart = async (req: AuthRequest, res: Response) => {
 
     res.json({ message: "Item removed from cart" });
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
@@ -198,6 +198,6 @@ export const clearCart = async (req: AuthRequest, res: Response) => {
 
     res.json({ message: "Cart cleared" });
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };

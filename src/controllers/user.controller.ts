@@ -49,7 +49,7 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
@@ -68,7 +68,7 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
 
     res.json({ message: "User deleted successfully" });
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
@@ -88,6 +88,6 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
     }
     res.json({ message: "Role updated successfully" });
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };

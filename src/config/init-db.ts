@@ -112,6 +112,45 @@ export const initializeDatabase = async () => {
         INDEX idx_orderId (orderId)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
+    // Create inventory table
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS inventory (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        productId INT NOT NULL,
+        quantity INT NOT NULL DEFAULT 0,
+        location VARCHAR(255),
+        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (productId) REFERENCES products(id) ON DELETE CASCADE,
+        INDEX idx_productId (productId)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // Create analytics table
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS analytics (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        type VARCHAR(100) NOT NULL,
+        userId INT,
+        data TEXT,
+        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_type (type),
+        INDEX idx_userId (userId)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // Create analytics table
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS analytics (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        type VARCHAR(100) NOT NULL,
+        userId INT,
+        data TEXT,
+        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_type (type),
+        INDEX idx_userId (userId)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
   } catch (error) {
     throw error;
   } finally {

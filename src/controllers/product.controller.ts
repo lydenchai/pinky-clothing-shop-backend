@@ -31,7 +31,7 @@ export const getAllProducts = async (req: Request, res: Response) => {
     const params: any[] = [];
 
     if (category) {
-      query += " AND category = ?";
+      query += " AND LOWER(category) = LOWER(?)";
       params.push(category);
     }
 
@@ -79,7 +79,7 @@ export const getAllProducts = async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
@@ -98,7 +98,7 @@ export const getProductById = async (req: Request, res: Response) => {
 
     res.json(products[0]);
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
@@ -142,23 +142,23 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
 
     res.status(201).json(products[0]);
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
 export const updateProduct = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const {
-      name,
-      description,
-      price,
-      category,
-      imageUrl,
-      stock,
-      sizes,
-      colors,
-    } = req.body;
+    let { name, description, price, category, imageUrl, stock, sizes, colors } =
+      req.body;
+
+    // Convert arrays to comma-separated strings if needed
+    if (Array.isArray(sizes)) {
+      sizes = sizes.join(",");
+    }
+    if (Array.isArray(colors)) {
+      colors = colors.join(",");
+    }
 
     const [result] = await pool.query<ResultSetHeader>(
       `UPDATE products SET name = ?, description = ?, price = ?, category = ?, imageUrl = ?, stock = ?, sizes = ?, colors = ?
@@ -187,7 +187,7 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
 
     res.json(products[0]);
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
@@ -206,7 +206,7 @@ export const deleteProduct = async (req: AuthRequest, res: Response) => {
 
     res.json({ message: "Product deleted successfully" });
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
@@ -218,6 +218,6 @@ export const getCategories = async (req: Request, res: Response) => {
 
     res.json(categories.map((c) => c.category));
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };

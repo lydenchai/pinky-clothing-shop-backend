@@ -88,7 +88,7 @@ export const register = async (req: Request, res: Response) => {
 
     res.status(201).json({ token, user });
   } catch (error) {
-    res.status(500).json({ error: "Server error during registration" });
+    res.status(500).json({ error: "Internal Server Error during registration" });
   }
 };
 
@@ -136,11 +136,11 @@ export const login = async (req: Request, res: Response) => {
   } catch (error) {
     // Log the error for debugging (do not expose stack in production)
     console.error('Error in login controller:', error);
-    const message = (error as Error).message || 'Server error during login';
+    const message = (error as Error).message || 'Internal Server Error during login';
     if (config.nodeEnv === 'production') {
-      res.status(500).json({ error: 'Server error during login' });
+      res.status(500).json({ error: 'Internal Server Error during login' });
     } else {
-      res.status(500).json({ error: 'Server error during login', details: message });
+      res.status(500).json({ error: 'Internal Server Error during login', details: message });
     }
   }
 };
@@ -158,7 +158,7 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
 
     res.json(users[0]);
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
@@ -189,6 +189,6 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
 
     res.json(users[0]);
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };

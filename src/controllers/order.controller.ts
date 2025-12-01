@@ -4,6 +4,9 @@ import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { body, validationResult } from "express-validator";
 import { AuthRequest } from "../middleware/auth.middleware";
 
+// ...existing imports...
+
+/* ----------------------------- VALIDATION ----------------------------- */
 export const orderValidation = [
   body("shippingAddress")
     .notEmpty()
@@ -13,22 +16,20 @@ export const orderValidation = [
   body("shippingCountry").notEmpty().withMessage("Country is required"),
 ];
 
+/* ----------------------------- CREATE ORDER --------------------------- */
 export const createOrder = async (req: AuthRequest, res: Response) => {
   const connection = await pool.getConnection();
-
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
-
     const {
       shippingAddress,
       shippingCity,
       shippingPostalCode,
       shippingCountry,
     } = req.body;
-
     await connection.beginTransaction();
 
     // Get cart items
@@ -39,20 +40,21 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
        WHERE ci.userId = ?`,
       [req.userId]
     );
-
     if (cartItems.length === 0) {
       await connection.rollback();
       return res.status(400).json({ error: "Cart is empty" });
     }
 
-    // Verify stock and calculate total
+    // Calculate total & validate stock
     let totalAmount = 0;
     for (const item of cartItems) {
       if (item.stock < item.quantity) {
         await connection.rollback();
-        return res.status(400).json({
-          error: `Insufficient stock for product ID ${item.productId}`,
-        });
+        return res
+          .status(400)
+          .json({
+            error: `Insufficient stock for product ID ${item.productId}`,
+          });
       }
       totalAmount += item.price * item.quantity;
     }
@@ -70,10 +72,9 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         shippingCountry,
       ]
     );
-
     const orderId = orderResult.insertId;
 
-    // Create order items and update product stock
+    // Insert items + update stock
     for (const item of cartItems) {
       await connection.query(
         `INSERT INTO order_items (orderId, productId, quantity, price, size, color)
@@ -87,7 +88,6 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           item.color || null,
         ]
       );
-
       await connection.query(
         "UPDATE products SET stock = stock - ? WHERE id = ?",
         [item.quantity, item.productId]
@@ -98,197 +98,217 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     await connection.query("DELETE FROM cart_items WHERE userId = ?", [
       req.userId,
     ]);
-
     await connection.commit();
 
-    // Get created order with items
-    const [orders] = await connection.query<RowDataPacket[]>(
-      `SELECT o.*, 
-        JSON_ARRAYAGG(
-          JSON_OBJECT(
-            'id', oi.id,
-            'productId', oi.productId,
-            'quantity', oi.quantity,
-            'price', oi.price,
-            'size', oi.size,
-            'color', oi.color,
-            'productName', p.name,
-            'productImage', p.imageUrl
-          )
-        ) as items
-       FROM orders o
-       LEFT JOIN order_items oi ON o.id = oi.orderId
-       LEFT JOIN products p ON oi.productId = p.id
-       WHERE o.id = ?
-       GROUP BY o.id`,
+    // Fetch order with items
+    const [rows] = await connection.query<RowDataPacket[]>(
+      `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
+              p.name AS productName, p.imageUrl AS productImage
+         FROM orders o
+         LEFT JOIN order_items oi ON o.id = oi.orderId
+         LEFT JOIN products p ON oi.productId = p.id
+         WHERE o.id = ?`,
       [orderId]
     );
+    if (!rows.length) return res.status(404).json({ error: "Order not found" });
 
-    const order = orders[0];
-    order.items = JSON.parse(order.items);
-
+    const order: any = {
+      id: rows[0].orderId,
+      userId: rows[0].userId,
+      totalAmount: rows[0].totalAmount,
+      status: rows[0].status,
+      shippingAddress: rows[0].shippingAddress,
+      shippingCity: rows[0].shippingCity,
+      shippingPostalCode: rows[0].shippingPostalCode,
+      shippingCountry: rows[0].shippingCountry,
+      createdAt: rows[0].createdAt,
+      updatedAt: rows[0].updatedAt,
+      items: [],
+    };
+    rows.forEach((row) => {
+      if (row.itemId) {
+        order.items.push({
+          id: row.itemId,
+          productId: row.productId,
+          quantity: row.quantity,
+          price: row.price,
+          size: row.size,
+          color: row.color,
+          productName: row.productName,
+          productImage: row.productImage,
+        });
+      }
+    });
     res.status(201).json(order);
   } catch (error) {
     await connection.rollback();
-    res.status(500).json({ error: "Server error" });
+    console.error("createOrder error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   } finally {
     connection.release();
   }
 };
 
+/* ------------------------------ GET ORDERS ---------------------------- */
 export const getOrders = async (req: AuthRequest, res: Response) => {
   try {
-    const [orders] = await pool.query<RowDataPacket[]>(
-      `SELECT o.*,
-        JSON_ARRAYAGG(
-          JSON_OBJECT(
-            'id', oi.id,
-            'productId', oi.productId,
-            'quantity', oi.quantity,
-            'price', oi.price,
-            'size', oi.size,
-            'color', oi.color,
-            'productName', p.name,
-            'productImage', p.imageUrl
-          )
-        ) as items
-       FROM orders o
-       LEFT JOIN order_items oi ON o.id = oi.orderId
-       LEFT JOIN products p ON oi.productId = p.id
-       WHERE o.userId = ?
-       GROUP BY o.id
-       ORDER BY o.createdAt DESC`,
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
+              p.name AS productName, p.imageUrl AS productImage
+         FROM orders o
+         LEFT JOIN order_items oi ON o.id = oi.orderId
+         LEFT JOIN products p ON oi.productId = p.id
+         WHERE o.userId = ?
+         ORDER BY o.createdAt DESC`,
       [req.userId]
     );
-
-    const ordersWithItems = orders.map((order) => ({
-      ...order,
-      items: JSON.parse(order.items),
-    }));
-
-    res.json(ordersWithItems);
+    const map: any = {};
+    rows.forEach((row) => {
+      if (!map[row.orderId]) {
+        map[row.orderId] = {
+          id: row.orderId,
+          userId: row.userId,
+          totalAmount: row.totalAmount,
+          status: row.status,
+          shippingAddress: row.shippingAddress,
+          shippingCity: row.shippingCity,
+          shippingPostalCode: row.shippingPostalCode,
+          shippingCountry: row.shippingCountry,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          items: [],
+        };
+      }
+      if (row.itemId) {
+        map[row.orderId].items.push({
+          id: row.itemId,
+          productId: row.productId,
+          quantity: row.quantity,
+          price: row.price,
+          size: row.size,
+          color: row.color,
+          productName: row.productName,
+          productImage: row.productImage,
+        });
+      }
+    });
+    res.json(Object.values(map));
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    console.error("getOrders error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
+/* ---------------------------- GET ORDER BY ID ------------------------- */
 export const getOrderById = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-
-    const [orders] = await pool.query<RowDataPacket[]>(
-      `SELECT o.*,
-        JSON_ARRAYAGG(
-          JSON_OBJECT(
-            'id', oi.id,
-            'productId', oi.productId,
-            'quantity', oi.quantity,
-            'price', oi.price,
-            'size', oi.size,
-            'color', oi.color,
-            'productName', p.name,
-            'productImage', p.imageUrl
-          )
-        ) as items
-       FROM orders o
-       LEFT JOIN order_items oi ON o.id = oi.orderId
-       LEFT JOIN products p ON oi.productId = p.id
-       WHERE o.id = ? AND o.userId = ?
-       GROUP BY o.id`,
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
+              p.name AS productName, p.imageUrl AS productImage
+         FROM orders o
+         LEFT JOIN order_items oi ON o.id = oi.orderId
+         LEFT JOIN products p ON oi.productId = p.id
+         WHERE o.id = ? AND o.userId = ?`,
       [id, req.userId]
     );
+    if (!rows.length) return res.status(404).json({ error: "Order not found" });
 
-    if (orders.length === 0) {
-      return res.status(404).json({ error: "Order not found" });
-    }
-
-    const order = orders[0];
-    order.items = JSON.parse(order.items);
-
+    const order: any = {
+      id: rows[0].orderId,
+      userId: rows[0].userId,
+      totalAmount: rows[0].totalAmount,
+      status: rows[0].status,
+      shippingAddress: rows[0].shippingAddress,
+      shippingCity: rows[0].shippingCity,
+      shippingPostalCode: rows[0].shippingPostalCode,
+      shippingCountry: rows[0].shippingCountry,
+      createdAt: rows[0].createdAt,
+      updatedAt: rows[0].updatedAt,
+      items: [],
+    };
+    rows.forEach((row) => {
+      if (row.itemId) {
+        order.items.push({
+          id: row.itemId,
+          productId: row.productId,
+          quantity: row.quantity,
+          price: row.price,
+          size: row.size,
+          color: row.color,
+          productName: row.productName,
+          productImage: row.productImage,
+        });
+      }
+    });
     res.json(order);
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    console.error("getOrderById error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
+/* --------------------------- UPDATE ORDER STATUS ---------------------- */
 export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-
-    const validStatuses = [
+    const valid = [
       "pending",
       "processing",
       "shipped",
       "delivered",
       "cancelled",
     ];
-    if (!validStatuses.includes(status)) {
+    if (!valid.includes(status)) {
       return res.status(400).json({ error: "Invalid status" });
     }
-
     const [result] = await pool.query<ResultSetHeader>(
-      "UPDATE orders SET status = ?, updatedAt = NOW() WHERE id = ? AND userId = ?",
+      `UPDATE orders SET status = ?, updatedAt = NOW() WHERE id = ? AND userId = ?`,
       [status, id, req.userId]
     );
-
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Order not found" });
     }
-
     const [orders] = await pool.query<RowDataPacket[]>(
       "SELECT * FROM orders WHERE id = ?",
       [id]
     );
-
     res.json(orders[0]);
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    console.error("updateOrderStatus error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
-// Validation for order summary (same as order creation, but no DB write)
-export const orderSummaryValidation = [
-  body("shippingAddress")
-    .notEmpty()
-    .withMessage("Shipping address is required"),
-  body("shippingCity").notEmpty().withMessage("Shipping city is required"),
-  body("shippingPostalCode").notEmpty().withMessage("Postal code is required"),
-  body("shippingCountry").notEmpty().withMessage("Country is required"),
-];
+/* --------------------------- ORDER SUMMARY ---------------------------- */
+export const orderSummaryValidation = orderValidation;
 
-// POST /orders/summary: Validate cart, calculate totals, return summary (no DB write)
 export const orderSummary = async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
-
     const {
       shippingAddress,
       shippingCity,
       shippingPostalCode,
       shippingCountry,
     } = req.body;
-
-    // Get cart items
     const [cartItems] = await pool.query<RowDataPacket[]>(
-      `SELECT ci.productId, ci.quantity, ci.size, ci.color, p.price, p.stock, p.name as productName, p.imageUrl as productImage
-       FROM cart_items ci
-       JOIN products p ON ci.productId = p.id
-       WHERE ci.userId = ?`,
+      `SELECT ci.productId, ci.quantity, ci.size, ci.color, p.price, p.stock, p.name AS productName, p.imageUrl AS productImage
+         FROM cart_items ci
+         JOIN products p ON ci.productId = p.id
+         WHERE ci.userId = ?`,
       [req.userId]
     );
-
     if (cartItems.length === 0) {
       return res.status(400).json({ error: "Cart is empty" });
     }
-
-    // Validate stock and calculate totals
     let subtotal = 0;
-    let outOfStock: any[] = [];
-    const items = cartItems.map((item: any) => {
+    const outOfStock: any[] = [];
+    const items = cartItems.map((item) => {
       if (item.stock < item.quantity) {
         outOfStock.push({
           productId: item.productId,
@@ -307,19 +327,15 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
         stock: item.stock,
       };
     });
-
     if (outOfStock.length > 0) {
       return res
         .status(400)
         .json({ error: "Some items are out of stock", outOfStock });
     }
-
-    // Calculate shipping (example: free over $100, else $10)
     const shipping = subtotal > 100 ? 0 : 10;
     const tax = subtotal * 0.08;
     const total = subtotal + shipping + tax;
-
-    const summary = {
+    res.json({
       items,
       subtotal,
       shipping,
@@ -329,10 +345,9 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
       shippingCity,
       shippingPostalCode,
       shippingCountry,
-    };
-
-    res.json(summary);
+    });
   } catch (error) {
-    res.status(500).json({ error: "Server error" });
+    console.error("orderSummary error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };

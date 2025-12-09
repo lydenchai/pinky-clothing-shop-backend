@@ -1,3 +1,55 @@
+// Get all orders for admin
+export const getAllOrders = async (req: AuthRequest, res: Response) => {
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
+              p.name AS productName, p.imageUrl AS productImage,
+              u.email AS userEmail, u.firstName AS userFirstName, u.lastName AS userLastName
+         FROM orders o
+         LEFT JOIN order_items oi ON o.id = oi.orderId
+         LEFT JOIN products p ON oi.productId = p.id
+         LEFT JOIN users u ON o.userId = u.id
+         ORDER BY o.createdAt DESC`
+    );
+    const map: any = {};
+    rows.forEach((row) => {
+      if (!map[row.orderId]) {
+        map[row.orderId] = {
+          id: row.orderId,
+          userId: row.userId,
+          userEmail: row.userEmail,
+          userFirstName: row.userFirstName,
+          userLastName: row.userLastName,
+          totalAmount: row.totalAmount,
+          status: row.status,
+          shippingAddress: row.shippingAddress,
+          shippingCity: row.shippingCity,
+          shippingPostalCode: row.shippingPostalCode,
+          shippingCountry: row.shippingCountry,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          items: [],
+        };
+      }
+      if (row.itemId) {
+        map[row.orderId].items.push({
+          id: row.itemId,
+          productId: row.productId,
+          quantity: row.quantity,
+          price: row.price,
+          size: row.size,
+          color: row.color,
+          productName: row.productName,
+          productImage: row.productImage,
+        });
+      }
+    });
+    res.json(Object.values(map));
+  } catch (error) {
+    console.error("getAllOrders error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
 import { Response } from "express";
 import { pool } from "../config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
@@ -150,16 +202,24 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 /* ------------------------------ GET ORDERS ---------------------------- */
 export const getOrders = async (req: AuthRequest, res: Response) => {
   try {
-    const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
+    // Check if user is admin
+    const [userRows] = await pool.query<RowDataPacket[]>(
+      "SELECT role FROM users WHERE id = ?",
+      [req.userId]
+    );
+    const isAdmin = userRows.length && userRows[0].role === "admin";
+    let query = `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
               p.name AS productName, p.imageUrl AS productImage
          FROM orders o
          LEFT JOIN order_items oi ON o.id = oi.orderId
-         LEFT JOIN products p ON oi.productId = p.id
-         WHERE o.userId = ?
-         ORDER BY o.createdAt DESC`,
-      [req.userId]
-    );
+         LEFT JOIN products p ON oi.productId = p.id`;
+    let params: any[] = [];
+    if (!isAdmin) {
+      query += " WHERE o.userId = ?";
+      params.push(req.userId);
+    }
+    query += " ORDER BY o.createdAt DESC";
+    const [rows] = await pool.query<RowDataPacket[]>(query, params);
     const map: any = {};
     rows.forEach((row) => {
       if (!map[row.orderId]) {

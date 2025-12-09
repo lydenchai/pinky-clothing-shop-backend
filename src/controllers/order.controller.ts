@@ -50,11 +50,9 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     for (const item of cartItems) {
       if (item.stock < item.quantity) {
         await connection.rollback();
-        return res
-          .status(400)
-          .json({
-            error: `Insufficient stock for product ID ${item.productId}`,
-          });
+        return res.status(400).json({
+          error: `Insufficient stock for product ID ${item.productId}`,
+        });
       }
       totalAmount += item.price * item.quantity;
     }
@@ -349,5 +347,49 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("orderSummary error:", error);
     res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// Order summary endpoint for frontend confirmation
+export const getOrderSummary = async (req: AuthRequest, res: Response) => {
+  try {
+    const {
+      shippingAddress,
+      shippingCity,
+      shippingPostalCode,
+      shippingCountry,
+    } = req.body;
+
+    // Get cart items for user
+    const [cartItems] = await pool.query<RowDataPacket[]>(
+      `SELECT ci.productId, ci.quantity, ci.size, ci.color, p.price, p.name, p.imageUrl
+       FROM cart_items ci
+       JOIN products p ON ci.productId = p.id
+       WHERE ci.userId = ?`,
+      [req.userId]
+    );
+    if (cartItems.length === 0) {
+      return res.status(400).json({ error: "Cart is empty" });
+    }
+
+    // Calculate total
+    let totalAmount = 0;
+    for (const item of cartItems) {
+      totalAmount += item.price * item.quantity;
+    }
+
+    // Return summary
+    res.json({
+      items: cartItems,
+      total: totalAmount,
+      shipping: {
+        address: shippingAddress,
+        city: shippingCity,
+        postalCode: shippingPostalCode,
+        country: shippingCountry,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to prepare order summary" });
   }
 };

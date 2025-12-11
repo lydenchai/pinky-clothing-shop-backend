@@ -32,7 +32,6 @@ export const addRoleColumn = async () => {
     } else {
       console.log("User pinky@example.com not found.");
     }
-
   } catch (error) {
     console.error("Error updating database:", error);
     throw error;

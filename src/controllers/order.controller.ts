@@ -1,6 +1,19 @@
 // Get all orders for admin
 export const getAllOrders = async (req: AuthRequest, res: Response) => {
   try {
+    const page = parseInt((req.query.page as string) || "1", 10) || 1;
+    const limit = parseInt((req.query.limit as string) || "15", 10) || 15;
+    const offset = (page - 1) * limit;
+
+    // total orders
+    const [countRows] = await pool.query<RowDataPacket[]>(
+      "SELECT COUNT(*) as total FROM orders"
+    );
+    const total =
+      Array.isArray(countRows) && (countRows as any)[0]
+        ? (countRows as any)[0].total
+        : 0;
+
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
               p.name AS productName, p.imageUrl AS productImage,
@@ -9,7 +22,9 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
          LEFT JOIN order_items oi ON o.id = oi.orderId
          LEFT JOIN products p ON oi.productId = p.id
          LEFT JOIN users u ON o.userId = u.id
-         ORDER BY o.createdAt DESC`
+         ORDER BY o.updatedAt DESC, o.id DESC
+         LIMIT ? OFFSET ?`,
+      [limit, offset]
     );
     const map: any = {};
     rows.forEach((row) => {
@@ -44,7 +59,16 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
         });
       }
     });
-    res.json(Object.values(map));
+
+    res.json({
+      data: Object.values(map),
+      pagination: {
+        page,
+        limit,
+        totalItems: total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
   } catch (error) {
     console.error("getAllOrders error:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -218,7 +242,29 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
       query += " WHERE o.userId = ?";
       params.push(req.userId);
     }
-    query += " ORDER BY o.createdAt DESC";
+    // pagination
+    const page = parseInt((req.query.page as string) || "1", 10) || 1;
+    const limit = parseInt((req.query.limit as string) || "15", 10) || 15;
+    const offset = (page - 1) * limit;
+
+    // count total with same filter
+    let countQuery = "SELECT COUNT(DISTINCT o.id) as total FROM orders o";
+    const countParams: any[] = [];
+    if (!isAdmin) {
+      countQuery += " WHERE o.userId = ?";
+      countParams.push(req.userId);
+    }
+    const [countRows] = await pool.query<RowDataPacket[]>(
+      countQuery,
+      countParams
+    );
+    const total =
+      Array.isArray(countRows) && (countRows as any)[0]
+        ? (countRows as any)[0].total
+        : 0;
+
+    query += " ORDER BY o.updatedAt DESC, o.id DESC LIMIT ? OFFSET ?";
+    params.push(limit, offset);
     const [rows] = await pool.query<RowDataPacket[]>(query, params);
     const map: any = {};
     rows.forEach((row) => {
@@ -250,7 +296,16 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
         });
       }
     });
-    res.json(Object.values(map));
+
+    res.json({
+      data: Object.values(map),
+      pagination: {
+        page,
+        limit,
+        totalItems: total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
   } catch (error) {
     console.error("getOrders error:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -261,15 +316,24 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
 export const getOrderById = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
+    // Check if user is admin
+    const [userRows] = await pool.query<RowDataPacket[]>(
+      "SELECT role FROM users WHERE id = ?",
+      [req.userId]
+    );
+    const isAdmin = userRows.length && userRows[0].role === "admin";
+    let query = `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
               p.name AS productName, p.imageUrl AS productImage
          FROM orders o
          LEFT JOIN order_items oi ON o.id = oi.orderId
          LEFT JOIN products p ON oi.productId = p.id
-         WHERE o.id = ? AND o.userId = ?`,
-      [id, req.userId]
-    );
+         WHERE o.id = ?`;
+    let params: any[] = [id];
+    if (!isAdmin) {
+      query += " AND o.userId = ?";
+      params.push(req.userId);
+    }
+    const [rows] = await pool.query<RowDataPacket[]>(query, params);
     if (!rows.length) return res.status(404).json({ error: "Order not found" });
 
     const order: any = {
@@ -321,18 +385,68 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     if (!valid.includes(status)) {
       return res.status(400).json({ error: "Invalid status" });
     }
-    const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE orders SET status = ?, updatedAt = NOW() WHERE id = ? AND userId = ?`,
-      [status, id, req.userId]
+    // Determine if the requester is an admin. Admins may update any order.
+    const [userRows] = await pool.query<RowDataPacket[]>(
+      "SELECT role FROM users WHERE id = ?",
+      [req.userId]
     );
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: "Order not found" });
+    const isAdmin = userRows.length && userRows[0].role === "admin";
+
+    let query: string;
+    let params: any[];
+    if (isAdmin) {
+      query = `UPDATE orders SET status = ?, updatedAt = NOW() WHERE id = ?`;
+      params = [status, id];
+    } else {
+      query = `UPDATE orders SET status = ?, updatedAt = NOW() WHERE id = ? AND userId = ?`;
+      params = [status, id, req.userId];
     }
-    const [orders] = await pool.query<RowDataPacket[]>(
-      "SELECT * FROM orders WHERE id = ?",
+
+    const [result] = await pool.query<ResultSetHeader>(query, params);
+    if (result.affectedRows === 0) {
+      return res
+        .status(404)
+        .json({ error: "Order not found or permission denied" });
+    }
+    // Return the full order object (including items) so frontend keeps rendering correctly
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
+              p.name AS productName, p.imageUrl AS productImage
+         FROM orders o
+         LEFT JOIN order_items oi ON o.id = oi.orderId
+         LEFT JOIN products p ON oi.productId = p.id
+         WHERE o.id = ?`,
       [id]
     );
-    res.json(orders[0]);
+    if (!rows.length) return res.status(404).json({ error: "Order not found" });
+    const order: any = {
+      id: rows[0].orderId,
+      userId: rows[0].userId,
+      totalAmount: rows[0].totalAmount,
+      status: rows[0].status,
+      shippingAddress: rows[0].shippingAddress,
+      shippingCity: rows[0].shippingCity,
+      shippingPostalCode: rows[0].shippingPostalCode,
+      shippingCountry: rows[0].shippingCountry,
+      createdAt: rows[0].createdAt,
+      updatedAt: rows[0].updatedAt,
+      items: [],
+    };
+    rows.forEach((row) => {
+      if (row.itemId) {
+        order.items.push({
+          id: row.itemId,
+          productId: row.productId,
+          quantity: row.quantity,
+          price: row.price,
+          size: row.size,
+          color: row.color,
+          productName: row.productName,
+          productImage: row.productImage,
+        });
+      }
+    });
+    res.json(order);
   } catch (error) {
     console.error("updateOrderStatus error:", error);
     res.status(500).json({ error: "Internal Server Error" });

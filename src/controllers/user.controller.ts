@@ -38,14 +38,12 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
     const [users] = await pool.query<RowDataPacket[]>(query, params);
 
     res.json({
-      users,
+      data: users,
       pagination: {
-        currentPage,
-        itemsPerPage,
+        page: currentPage,
+        limit: itemsPerPage,
         totalItems,
         totalPages,
-        hasNextPage: currentPage < totalPages,
-        hasPreviousPage: currentPage > 1,
       },
     });
   } catch (error) {

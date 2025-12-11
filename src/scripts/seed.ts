@@ -378,7 +378,7 @@ function generateProducts(count: number = 100) {
       const template = templates[i % templates.length];
       const adjective =
         template.adjectives[
-        Math.floor(Math.random() * template.adjectives.length)
+          Math.floor(Math.random() * template.adjectives.length)
         ];
       const description =
         descriptions[Math.floor(Math.random() * descriptions.length)];
@@ -392,8 +392,9 @@ function generateProducts(count: number = 100) {
         : imagesArr;
       products.push({
         name: `${adjective} ${template.name}`,
-        description: `${description} - ${demographic.charAt(0).toUpperCase() + demographic.slice(1)
-          }'s ${productType}`,
+        description: `${description} - ${
+          demographic.charAt(0).toUpperCase() + demographic.slice(1)
+        }'s ${productType}`,
         price: price,
         category: demographic,
         imageUrl: imageUrl,

@@ -3,8 +3,34 @@ import { pool } from "../config/database";
 
 export const getAllInventory = async (req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query("SELECT * FROM inventory");
-    res.json(rows);
+    const page = parseInt((req.query.page as string) || "1", 10) || 1;
+    const limit = parseInt((req.query.limit as string) || "15", 10) || 15;
+    const offset = (page - 1) * limit;
+
+    // total count
+    const [countRows] = await pool.query(
+      "SELECT COUNT(*) as total FROM inventory"
+    );
+    const total =
+      Array.isArray(countRows) && (countRows as any)[0]
+        ? (countRows as any)[0].total
+        : 0;
+
+    // paginated rows
+    const [rows] = await pool.query(
+      "SELECT * FROM inventory ORDER BY updatedAt DESC, id DESC LIMIT ? OFFSET ?",
+      [limit, offset]
+    );
+
+    res.json({
+      data: Array.isArray(rows) ? rows : [],
+      pagination: {
+        page,
+        limit,
+        totalItems: total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
   } catch (err) {
     res.status(500).json({ message: "Failed to fetch inventory", error: err });
   }

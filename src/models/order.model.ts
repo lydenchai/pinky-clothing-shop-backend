@@ -2,7 +2,7 @@ export interface Order {
   id?: number;
   userId: number;
   totalAmount: number;
-  status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
+  status: "pending" | "processing" | "shipped" | "delivered" | "cancelled";
   shippingAddress: string;
   shippingCity: string;
   shippingPostalCode: string;
@@ -22,8 +22,10 @@ export interface OrderItem {
 }
 
 export interface OrderWithItems extends Order {
-  items: Array<OrderItem & {
-    productName: string;
-    productImage: string;
-  }>;
+  items: Array<
+    OrderItem & {
+      productName: string;
+      productImage: string;
+    }
+  >;
 }

@@ -88,7 +88,9 @@ export const register = async (req: Request, res: Response) => {
 
     res.status(201).json({ token, user });
   } catch (error) {
-    res.status(500).json({ error: "Internal Server Error during registration" });
+    res
+      .status(500)
+      .json({ error: "Internal Server Error during registration" });
   }
 };
 
@@ -109,7 +111,7 @@ export const login = async (req: Request, res: Response) => {
       [email]
     );
 
-    console.log('DB query returned user count:', (users as any[]).length);
+    console.log("DB query returned user count:", (users as any[]).length);
     if (users.length === 0) {
       console.log(`Login failed: User not found for email ${email}`);
       return res.status(401).json({ error: "Invalid credentials" });
@@ -135,12 +137,18 @@ export const login = async (req: Request, res: Response) => {
     res.json({ token, user: userWithoutPassword });
   } catch (error) {
     // Log the error for debugging (do not expose stack in production)
-    console.error('Error in login controller:', error);
-    const message = (error as Error).message || 'Internal Server Error during login';
-    if (config.nodeEnv === 'production') {
-      res.status(500).json({ error: 'Internal Server Error during login' });
+    console.error("Error in login controller:", error);
+    const message =
+      (error as Error).message || "Internal Server Error during login";
+    if (config.nodeEnv === "production") {
+      res.status(500).json({ error: "Internal Server Error during login" });
     } else {
-      res.status(500).json({ error: 'Internal Server Error during login', details: message });
+      res
+        .status(500)
+        .json({
+          error: "Internal Server Error during login",
+          details: message,
+        });
     }
   }
 };

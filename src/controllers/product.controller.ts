@@ -68,14 +68,12 @@ export const getAllProducts = async (req: Request, res: Response) => {
     const [products] = await pool.query<RowDataPacket[]>(query, params);
 
     res.json({
-      products,
+      data: products,
       pagination: {
-        currentPage,
-        itemsPerPage,
+        page: currentPage,
+        limit: itemsPerPage,
         totalItems,
         totalPages,
-        hasNextPage: currentPage < totalPages,
-        hasPreviousPage: currentPage > 1,
       },
     });
   } catch (error) {

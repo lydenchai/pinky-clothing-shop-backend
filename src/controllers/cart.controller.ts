@@ -16,7 +16,7 @@ export const getCart = async (req: AuthRequest, res: Response) => {
     const [items] = await pool.query<RowDataPacket[]>(
       `SELECT 
         ci.id, ci.userId, ci.productId, ci.quantity, ci.size, ci.color, ci.createdAt,
-        p.name as productName, p.price as productPrice, p.imageUrl as productImage, p.stock as productStock
+        p.name as productName, p.price as productPrice, p.image as productImage, p.stock as productStock
        FROM cart_items ci
        JOIN products p ON ci.productId = p.id
        WHERE ci.userId = ?
@@ -76,7 +76,7 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
       const [updatedItems] = await pool.query<RowDataPacket[]>(
         `SELECT 
           ci.id, ci.userId, ci.productId, ci.quantity, ci.size, ci.color, ci.createdAt,
-          p.name as productName, p.price as productPrice, p.imageUrl as productImage, p.stock as productStock
+          p.name as productName, p.price as productPrice, p.image as productImage, p.stock as productStock
          FROM cart_items ci
          JOIN products p ON ci.productId = p.id
          WHERE ci.id = ?`,
@@ -95,7 +95,7 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
     const [newItems] = await pool.query<RowDataPacket[]>(
       `SELECT 
         ci.id, ci.userId, ci.productId, ci.quantity, ci.size, ci.color, ci.createdAt,
-        p.name as productName, p.price as productPrice, p.imageUrl as productImage, p.stock as productStock
+        p.name as productName, p.price as productPrice, p.image as productImage, p.stock as productStock
        FROM cart_items ci
        JOIN products p ON ci.productId = p.id
        WHERE ci.id = ?`,
@@ -145,7 +145,7 @@ export const updateCartItem = async (req: AuthRequest, res: Response) => {
     const [updatedItems] = await pool.query<RowDataPacket[]>(
       `SELECT 
         ci.id, ci.userId, ci.productId, ci.quantity, ci.size, ci.color, ci.createdAt,
-        p.name as productName, p.price as productPrice, p.imageUrl as productImage, p.stock as productStock
+        p.name as productName, p.price as productPrice, p.image as productImage, p.stock as productStock
        FROM cart_items ci
        JOIN products p ON ci.productId = p.id
        WHERE ci.id = ?`,

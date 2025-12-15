@@ -16,7 +16,7 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
 
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS productName, p.imageUrl AS productImage,
+              p.name AS productName, p.image AS productImage,
               u.email AS userEmail, u.firstName AS userFirstName, u.lastName AS userLastName
          FROM orders o
          LEFT JOIN order_items oi ON o.id = oi.orderId
@@ -84,12 +84,22 @@ import { AuthRequest } from "../middleware/auth.middleware";
 
 /* ----------------------------- VALIDATION ----------------------------- */
 export const orderValidation = [
-  body("shippingAddress")
-    .notEmpty()
-    .withMessage("Shipping address is required"),
-  body("shippingCity").notEmpty().withMessage("Shipping city is required"),
-  body("shippingPostalCode").notEmpty().withMessage("Postal code is required"),
-  body("shippingCountry").notEmpty().withMessage("Country is required"),
+  body("address").custom((value) => {
+    if (!value) throw new Error("Address is required");
+    const required = [
+      "street",
+      "house",
+      "village",
+      "commune",
+      "district",
+      "province",
+      "country",
+    ];
+    for (const key of required) {
+      if (!value[key]) throw new Error(`Address field '${key}' is required`);
+    }
+    return true;
+  }),
 ];
 
 /* ----------------------------- CREATE ORDER --------------------------- */
@@ -100,12 +110,24 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
-    const {
-      shippingAddress,
-      shippingCity,
-      shippingPostalCode,
-      shippingCountry,
-    } = req.body;
+    let shippingAddress = "",
+      shippingCity = "",
+      shippingPostalCode = "",
+      shippingCountry = "";
+    if (req.body.address) {
+      const a = req.body.address;
+      shippingAddress = `${a.house || ""} ${a.street || ""} ${
+        a.village || ""
+      } ${a.commune || ""} ${a.district || ""} ${a.province || ""}`.trim();
+      shippingCity = a.province || "";
+      shippingPostalCode = a.postalCode || "";
+      shippingCountry = a.country || "Cambodia";
+    } else {
+      shippingAddress = req.body.shippingAddress;
+      shippingCity = req.body.shippingCity;
+      shippingPostalCode = req.body.shippingPostalCode;
+      shippingCountry = req.body.shippingCountry;
+    }
     await connection.beginTransaction();
 
     // Get cart items
@@ -177,7 +199,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     // Fetch order with items
     const [rows] = await connection.query<RowDataPacket[]>(
       `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS productName, p.imageUrl AS productImage
+              p.name AS productName, p.image AS productImage
          FROM orders o
          LEFT JOIN order_items oi ON o.id = oi.orderId
          LEFT JOIN products p ON oi.productId = p.id
@@ -233,7 +255,7 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
     );
     const isAdmin = userRows.length && userRows[0].role === "admin";
     let query = `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS productName, p.imageUrl AS productImage
+              p.name AS productName, p.image AS productImage
          FROM orders o
          LEFT JOIN order_items oi ON o.id = oi.orderId
          LEFT JOIN products p ON oi.productId = p.id`;
@@ -323,7 +345,7 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
     );
     const isAdmin = userRows.length && userRows[0].role === "admin";
     let query = `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS productName, p.imageUrl AS productImage
+              p.name AS productName, p.image AS productImage
          FROM orders o
          LEFT JOIN order_items oi ON o.id = oi.orderId
          LEFT JOIN products p ON oi.productId = p.id
@@ -411,7 +433,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     // Return the full order object (including items) so frontend keeps rendering correctly
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS productName, p.imageUrl AS productImage
+              p.name AS productName, p.image AS productImage
          FROM orders o
          LEFT JOIN order_items oi ON o.id = oi.orderId
          LEFT JOIN products p ON oi.productId = p.id
@@ -462,14 +484,26 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
-    const {
-      shippingAddress,
-      shippingCity,
-      shippingPostalCode,
-      shippingCountry,
-    } = req.body;
+    let shippingAddress = "",
+      shippingCity = "",
+      shippingPostalCode = "",
+      shippingCountry = "";
+    if (req.body.address) {
+      const a = req.body.address;
+      shippingAddress = `${a.house || ""} ${a.street || ""} ${
+        a.village || ""
+      } ${a.commune || ""} ${a.district || ""} ${a.province || ""}`.trim();
+      shippingCity = a.province || "";
+      shippingPostalCode = a.postalCode || "";
+      shippingCountry = a.country || "Cambodia";
+    } else {
+      shippingAddress = req.body.shippingAddress;
+      shippingCity = req.body.shippingCity;
+      shippingPostalCode = req.body.shippingPostalCode;
+      shippingCountry = req.body.shippingCountry;
+    }
     const [cartItems] = await pool.query<RowDataPacket[]>(
-      `SELECT ci.productId, ci.quantity, ci.size, ci.color, p.price, p.stock, p.name AS productName, p.imageUrl AS productImage
+      `SELECT ci.productId, ci.quantity, ci.size, ci.color, p.price, p.stock, p.name AS productName, p.image AS productImage
          FROM cart_items ci
          JOIN products p ON ci.productId = p.id
          WHERE ci.userId = ?`,
@@ -536,7 +570,7 @@ export const getOrderSummary = async (req: AuthRequest, res: Response) => {
 
     // Get cart items for user
     const [cartItems] = await pool.query<RowDataPacket[]>(
-      `SELECT ci.productId, ci.quantity, ci.size, ci.color, p.price, p.name, p.imageUrl
+      `SELECT ci.productId, ci.quantity, ci.size, ci.color, p.price, p.name, p.image
        FROM cart_items ci
        JOIN products p ON ci.productId = p.id
        WHERE ci.userId = ?`,

@@ -282,7 +282,7 @@ const sizes = {
   Activewear: "XS,S,M,L,XL,XXL",
 };
 
-const imageUrls = {
+const images = {
   "T-Shirts": [
     "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=800",
     "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?w=800",
@@ -386,8 +386,8 @@ function generateProducts(count: number = 100) {
       const stock = Math.floor(Math.random() * 80) + 10; // Random stock between 10-90
 
       // Assign a unique image for each product by cycling through the image array
-      const imagesArr = imageUrls[productType];
-      const imageUrl = Array.isArray(imagesArr)
+      const imagesArr = images[productType];
+      const image = Array.isArray(imagesArr)
         ? imagesArr[i % imagesArr.length]
         : imagesArr;
       products.push({
@@ -397,7 +397,7 @@ function generateProducts(count: number = 100) {
         }'s ${productType}`,
         price: price,
         category: demographic,
-        imageUrl: imageUrl,
+        image: image,
         stock: stock,
         sizes: sizes[productType],
         colors: colors[productType],
@@ -462,14 +462,14 @@ export const seed = async () => {
     console.log("Seeding products...");
     for (const product of seedProducts) {
       await connection.query<ResultSetHeader>(
-        `INSERT INTO products (name, description, price, category, imageUrl, stock, sizes, colors)
+        `INSERT INTO products (name, description, price, category, image, stock, sizes, colors)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           product.name,
           product.description,
           product.price,
           product.category,
-          product.imageUrl,
+          product.image,
           product.stock,
           product.sizes,
           product.colors,

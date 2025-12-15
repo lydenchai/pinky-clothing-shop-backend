@@ -152,7 +152,7 @@ A comprehensive RESTful API for an e-commerce clothing shop built with Node.js, 
 ### Products Table
 
 - id, name, description, price, category
-- imageUrl, stock, sizes, colors
+- image, stock, sizes, colors
 - createdAt, updatedAt
 
 ### Cart Items Table

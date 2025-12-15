@@ -11,7 +11,7 @@ export const productValidation = [
     .isFloat({ min: 0 })
     .withMessage("Price must be a positive number"),
   body("category").notEmpty().withMessage("Category is required"),
-  body("imageUrl").notEmpty().withMessage("Image URL is required"),
+  body("image").notEmpty().withMessage("Image URL is required"),
   body("stock")
     .isInt({ min: 0 })
     .withMessage("Stock must be a non-negative integer"),
@@ -70,10 +70,12 @@ export const getAllProducts = async (req: Request, res: Response) => {
     res.json({
       data: products,
       pagination: {
-        page: currentPage,
-        limit: itemsPerPage,
+        currentPage,
+        itemsPerPage,
         totalItems,
         totalPages,
+        hasNextPage: currentPage < totalPages,
+        hasPreviousPage: currentPage > 1,
       },
     });
   } catch (error) {
@@ -107,26 +109,18 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const {
-      name,
-      description,
-      price,
-      category,
-      imageUrl,
-      stock,
-      sizes,
-      colors,
-    } = req.body;
+    const { name, description, price, category, image, stock, sizes, colors } =
+      req.body;
 
     const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO products (name, description, price, category, imageUrl, stock, sizes, colors)
+      `INSERT INTO products (name, description, price, category, image, stock, sizes, colors)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name,
         description,
         price,
         category,
-        imageUrl,
+        image,
         stock || 0,
         sizes || null,
         colors || null,
@@ -147,7 +141,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
 export const updateProduct = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    let { name, description, price, category, imageUrl, stock, sizes, colors } =
+    let { name, description, price, category, image, stock, sizes, colors } =
       req.body;
 
     // Convert arrays to comma-separated strings if needed
@@ -159,14 +153,14 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
     }
 
     const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE products SET name = ?, description = ?, price = ?, category = ?, imageUrl = ?, stock = ?, sizes = ?, colors = ?
+      `UPDATE products SET name = ?, description = ?, price = ?, category = ?, image = ?, stock = ?, sizes = ?, colors = ?
        WHERE id = ?`,
       [
         name,
         description,
         price,
         category,
-        imageUrl,
+        image,
         stock,
         sizes || null,
         colors || null,

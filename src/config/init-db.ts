@@ -4,6 +4,19 @@ export const initializeDatabase = async () => {
   const connection = await pool.getConnection();
 
   try {
+    // Rename 'imageUrl' column to 'image' in products table if it exists
+    try {
+      const [columns] = await connection.query(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'products' AND COLUMN_NAME = 'imageUrl'`
+      );
+      if ((columns as any[]).length > 0) {
+        await connection.query(
+          `ALTER TABLE products CHANGE COLUMN imageUrl image TEXT`
+        );
+      }
+    } catch (err) {
+      // Ignore if table/column does not exist
+    }
     // Create users table
     await connection.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -49,7 +62,7 @@ export const initializeDatabase = async () => {
         description TEXT,
         price DECIMAL(10, 2) NOT NULL,
         category VARCHAR(100) NOT NULL,
-        imageUrl TEXT,
+        image TEXT,
         stock INT DEFAULT 0,
         sizes VARCHAR(255),
         colors VARCHAR(255),

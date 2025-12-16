@@ -11,10 +11,10 @@ import {
 const router = Router();
 
 router.get("/", getAllInventory);
-router.get("/:id", getInventoryById);
-router.post("/", createInventory);
-router.put("/:id", updateInventory);
-router.delete("/:id", deleteInventory);
-router.patch("/:id/adjust", adjustStock);
+router.get("/find/:id", getInventoryById);
+router.post("/create", createInventory);
+router.patch("/update/:id/", updateInventory);
+router.delete("/delete/:id", deleteInventory);
+router.patch("/update/:id/adjust", adjustStock);
 
 export default router;

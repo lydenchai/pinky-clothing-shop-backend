@@ -68,6 +68,7 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
         totalItems: total,
         totalPages: Math.ceil(total / limit),
       },
+      message: "success",
     });
   } catch (error) {
     console.error("getAllOrders error:", error);
@@ -235,7 +236,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         });
       }
     });
-    res.status(201).json(order);
+    res.status(201).json({ data: order, message: "success" });
   } catch (error) {
     await connection.rollback();
     console.error("createOrder error:", error);
@@ -327,6 +328,7 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
         totalItems: total,
         totalPages: Math.ceil(total / limit),
       },
+      message: "success",
     });
   } catch (error) {
     console.error("getOrders error:", error);
@@ -385,7 +387,7 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
         });
       }
     });
-    res.json(order);
+    res.json({ data: order, message: "success" });
   } catch (error) {
     console.error("getOrderById error:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -468,7 +470,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
         });
       }
     });
-    res.json(order);
+    res.json({ data: order, message: "success" });
   } catch (error) {
     console.error("updateOrderStatus error:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -542,15 +544,18 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
     const tax = subtotal * 0.08;
     const total = subtotal + shipping + tax;
     res.json({
-      items,
-      subtotal,
-      shipping,
-      tax,
-      total,
-      shippingAddress,
-      shippingCity,
-      shippingPostalCode,
-      shippingCountry,
+      data: {
+        items,
+        subtotal,
+        shipping,
+        tax,
+        total,
+        shippingAddress,
+        shippingCity,
+        shippingPostalCode,
+        shippingCountry,
+      },
+      message: "success",
     });
   } catch (error) {
     console.error("orderSummary error:", error);
@@ -588,14 +593,17 @@ export const getOrderSummary = async (req: AuthRequest, res: Response) => {
 
     // Return summary
     res.json({
-      items: cartItems,
-      total: totalAmount,
-      shipping: {
-        address: shippingAddress,
-        city: shippingCity,
-        postalCode: shippingPostalCode,
-        country: shippingCountry,
+      data: {
+        items: cartItems,
+        total: totalAmount,
+        shipping: {
+          address: shippingAddress,
+          city: shippingCity,
+          postalCode: shippingPostalCode,
+          country: shippingCountry,
+        },
       },
+      message: "success",
     });
   } catch (error) {
     res.status(500).json({ error: "Failed to prepare order summary" });

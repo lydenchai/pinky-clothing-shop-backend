@@ -4,19 +4,16 @@ import { authenticate } from "../middleware/auth.middleware";
 
 const router = Router();
 
-// Public routes
 router.get("/", productController.getAllProducts);
 router.get("/categories", productController.getCategories);
-router.get("/:id", productController.getProductById);
-
-// Admin routes (require authentication)
+router.get("/find/:id", productController.getProductById);
 router.post(
-  "/",
+  "/create",
   authenticate,
   productController.productValidation,
   productController.createProduct
 );
-router.put("/:id", authenticate, productController.updateProduct);
-router.delete("/:id", authenticate, productController.deleteProduct);
+router.put("/update/:id", authenticate, productController.updateProduct);
+router.delete("/delete/:id", authenticate, productController.deleteProduct);
 
 export default router;

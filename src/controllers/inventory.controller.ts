@@ -44,7 +44,7 @@ export const getInventoryById = async (req: Request, res: Response) => {
     const item = Array.isArray(rows) ? rows[0] : null;
     if (!item)
       return res.status(404).json({ message: "Inventory item not found" });
-    res.json(item);
+    res.json({ data: item, message: "success" });
   } catch (err) {
     res
       .status(500)
@@ -63,7 +63,9 @@ export const createInventory = async (req: Request, res: Response) => {
     const [rows] = await pool.query("SELECT * FROM inventory WHERE id = ?", [
       insertId,
     ]);
-    res.status(201).json(Array.isArray(rows) ? rows[0] : null);
+    res
+      .status(201)
+      .json({ data: Array.isArray(rows) ? rows[0] : null, message: "success" });
   } catch (err) {
     res
       .status(500)

@@ -24,7 +24,28 @@ export const getCart = async (req: AuthRequest, res: Response) => {
       [req.userId]
     );
 
-    res.json(items);
+    res.json({ data: items, message: "success" });
+  } catch (error) {
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+export const getCartItemById = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const [items] = await pool.query<RowDataPacket[]>(
+      `SELECT 
+        ci.id, ci.userId, ci.productId, ci.quantity, ci.size, ci.color, ci.createdAt,
+        p.name as productName, p.price as productPrice, p.image as productImage, p.stock as productStock
+       FROM cart_items ci
+       JOIN products p ON ci.productId = p.id
+       WHERE ci.id = ?`,
+      [id]
+    );
+    if (items.length === 0) {
+      return res.status(404).json({ error: "Cart item not found" });
+    }
+    res.json({ data: items[0], message: "success" });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }

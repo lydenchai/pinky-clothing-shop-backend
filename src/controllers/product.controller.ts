@@ -70,13 +70,12 @@ export const getAllProducts = async (req: Request, res: Response) => {
     res.json({
       data: products,
       pagination: {
-        currentPage,
-        itemsPerPage,
+        page: currentPage,
+        limit: itemsPerPage,
         totalItems,
         totalPages,
-        hasNextPage: currentPage < totalPages,
-        hasPreviousPage: currentPage > 1,
       },
+      message: "success",
     });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
@@ -93,10 +92,9 @@ export const getProductById = async (req: Request, res: Response) => {
     );
 
     if (products.length === 0) {
-      return res.status(404).json({ error: "Product not found" });
+      return res.status(404).json({ data: null, message: "Product not found" });
     }
-
-    res.json(products[0]);
+    res.json({ data: products[0], message: "success" });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -131,8 +129,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       "SELECT * FROM products WHERE id = ?",
       [result.insertId]
     );
-
-    res.status(201).json(products[0]);
+    res.status(201).json({ data: products[0], message: "success" });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -169,15 +166,13 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ error: "Product not found" });
+      return res.status(404).json({ data: null, message: "Product not found" });
     }
-
     const [products] = await pool.query<RowDataPacket[]>(
       "SELECT * FROM products WHERE id = ?",
       [id]
     );
-
-    res.json(products[0]);
+    res.json({ data: products[0], message: "success" });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -193,10 +188,9 @@ export const deleteProduct = async (req: AuthRequest, res: Response) => {
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ error: "Product not found" });
+      return res.status(404).json({ data: null, message: "Product not found" });
     }
-
-    res.json({ message: "Product deleted successfully" });
+    res.json({ data: null, message: "Product deleted successfully" });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -208,7 +202,7 @@ export const getCategories = async (req: Request, res: Response) => {
       "SELECT DISTINCT category FROM products ORDER BY category"
     );
 
-    res.json(categories.map((c) => c.category));
+    res.json({ data: categories.map((c) => c.category), message: "success" });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }

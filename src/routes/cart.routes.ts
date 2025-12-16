@@ -9,8 +9,9 @@ router.use(authenticate);
 
 router.get("/", cartController.getCart);
 router.post("/", cartController.cartItemValidation, cartController.addToCart);
-router.put("/:id", cartController.updateCartItem);
-router.delete("/:id", cartController.removeFromCart);
-router.delete("/", cartController.clearCart);
+router.get("/find/:id", cartController.getCartItemById);
+router.patch("/update/:id", cartController.updateCartItem);
+router.delete("/delete/:id", cartController.removeFromCart);
+router.delete("/clear", cartController.clearCart);
 
 export default router;

@@ -45,9 +45,26 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
         totalItems,
         totalPages,
       },
+      message: "success",
     });
   } catch (error) {
-    res.status(500).json({ error: "Internal Server Error" });
+    res.status(500).json({ data: null, message: "error" });
+  }
+};
+
+export const getUserById = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const [users] = await pool.query<RowDataPacket[]>(
+      "SELECT id, email, firstName, lastName, address, city, country, phone, role, createdAt FROM users WHERE id = ?",
+      [id]
+    );
+    if (users.length === 0) {
+      return res.status(404).json({ data: null, message: "User not found" });
+    }
+    res.json({ data: users[0], message: "success" });
+  } catch (error) {
+    res.status(500).json({ data: null, message: "error" });
   }
 };
 
@@ -61,12 +78,11 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ error: "User not found" });
+      return res.status(404).json({ data: null, message: "User not found" });
     }
-
-    res.json({ message: "User deleted successfully" });
+    res.json({ data: null, message: "User deleted successfully" });
   } catch (error) {
-    res.status(500).json({ error: "Internal Server Error" });
+    res.status(500).json({ data: null, message: "error" });
   }
 };
 
@@ -75,17 +91,17 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { role } = req.body;
     if (!["admin", "customer"].includes(role)) {
-      return res.status(400).json({ error: "Invalid role" });
+      return res.status(400).json({ data: null, message: "Invalid role" });
     }
     const [result] = await pool.query<ResultSetHeader>(
       "UPDATE users SET role = ? WHERE id = ?",
       [role, id]
     );
     if (result.affectedRows === 0) {
-      return res.status(404).json({ error: "User not found" });
+      return res.status(404).json({ data: null, message: "User not found" });
     }
-    res.json({ message: "Role updated successfully" });
+    res.json({ data: null, message: "Role updated successfully" });
   } catch (error) {
-    res.status(500).json({ error: "Internal Server Error" });
+    res.status(500).json({ data: null, message: "error" });
   }
 };

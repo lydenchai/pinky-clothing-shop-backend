@@ -22,7 +22,7 @@ const checkUser = async () => {
         id: user.id,
         email: user.email,
         role: user.role,
-        firstName: user.firstName,
+        first_name: user.first_name,
       });
 
       const isMatch = await bcrypt.compare(password, user.password);

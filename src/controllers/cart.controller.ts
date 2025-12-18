@@ -3,11 +3,19 @@ import { pool } from "../config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { body, validationResult } from "express-validator";
 import { AuthRequest } from "../middleware/auth.middleware";
+import crypto from "crypto";
+
+function generateObjectId(): string {
+  const timestamp = Math.floor(Date.now() / 1000).toString(16);
+  const random = crypto.randomBytes(8).toString("hex");
+  return timestamp + random;
+}
 
 export const cartItemValidation = [
-  body("productId")
-    .isInt({ min: 1 })
-    .withMessage("Valid product ID is required"),
+  body("product_id")
+    .isString()
+    .matches(/^[a-fA-F0-9]{24}$/)
+    .withMessage("Valid product ID is required (24-char hex string)"),
   body("quantity").isInt({ min: 1 }).withMessage("Quantity must be at least 1"),
 ];
 
@@ -15,16 +23,31 @@ export const getCart = async (req: AuthRequest, res: Response) => {
   try {
     const [items] = await pool.query<RowDataPacket[]>(
       `SELECT 
-        ci.id, ci.userId, ci.productId, ci.quantity, ci.size, ci.color, ci.createdAt,
-        p.name as productName, p.price as productPrice, p.image as productImage, p.stock as productStock
+        ci._id, ci.user_id, ci.product_id, ci.quantity, ci.size, ci.color, ci.created_at,
+        p.name as product_name, p.price as product_price, p.image as product_image, p.stock as product_stock
        FROM cart_items ci
-       JOIN products p ON ci.productId = p.id
-       WHERE ci.userId = ?
-       ORDER BY ci.createdAt DESC`,
-      [req.userId]
+       JOIN products p ON ci.product_id = p._id
+       WHERE ci.user_id = ?
+       ORDER BY ci.created_at DESC`,
+      [req.user_id]
     );
 
-    res.json({ data: items, message: "success" });
+    // Calculate cart summary
+    const subtotal = items.reduce((sum, item) => sum + (item.product_price ?? 0) * item.quantity, 0);
+    const shipping = subtotal > 0 ? (subtotal > 100 ? 0 : 10) : 0;
+    const tax = subtotal * 0.08;
+    const total = subtotal + shipping + tax;
+    res.json({
+      data: {
+        items,
+        totalItems: items.reduce((sum, item) => sum + item.quantity, 0),
+        subtotal,
+        shipping,
+        tax,
+        total,
+      },
+      success: true,
+    });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -32,20 +55,20 @@ export const getCart = async (req: AuthRequest, res: Response) => {
 
 export const getCartItemById = async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const { _id } = req.params;
     const [items] = await pool.query<RowDataPacket[]>(
       `SELECT 
-        ci.id, ci.userId, ci.productId, ci.quantity, ci.size, ci.color, ci.createdAt,
-        p.name as productName, p.price as productPrice, p.image as productImage, p.stock as productStock
+        ci._id, ci.user_id, ci.product_id, ci.quantity, ci.size, ci.color, ci.created_at,
+        p.name as product_name, p.price as product_price, p.image as product_image, p.stock as product_stock
        FROM cart_items ci
-       JOIN products p ON ci.productId = p.id
-       WHERE ci.id = ?`,
-      [id]
+       JOIN products p ON ci.product_id = p._id
+       WHERE ci._id = ?`,
+      [_id]
     );
     if (items.length === 0) {
       return res.status(404).json({ error: "Cart item not found" });
     }
-    res.json({ data: items[0], message: "success" });
+    res.json({ data: items[0], success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -55,125 +78,158 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({
+        error: errors.array()[0]?.msg || "Invalid input",
+        code: "VALIDATION_ERROR",
+      });
     }
 
-    const { productId, quantity, size, color } = req.body;
+    const { product_id, quantity, size, color } = req.body;
 
     // Check if product exists and has enough stock
     const [products] = await pool.query<RowDataPacket[]>(
-      "SELECT id, stock FROM products WHERE id = ?",
-      [productId]
+      "SELECT _id, stock FROM products WHERE _id = ?",
+      [product_id]
     );
 
     if (products.length === 0) {
-      return res.status(404).json({ error: "Product not found" });
+      return res.status(404).json({
+        error: "Product not found",
+        code: "PRODUCT_NOT_FOUND",
+      });
     }
 
     const product = products[0];
     if (product.stock < quantity) {
-      return res.status(400).json({ error: "Insufficient stock" });
+      return res.status(400).json({
+        error: "Insufficient stock",
+        code: "INSUFFICIENT_STOCK",
+      });
+    }
+
+    // Check authentication
+    if (!req.user_id) {
+      return res.status(401).json({
+        error: "Unauthorized",
+        code: "UNAUTHORIZED",
+      });
     }
 
     // Check if item already exists in cart
     const [existingItems] = await pool.query<RowDataPacket[]>(
-      'SELECT id, quantity FROM cart_items WHERE userId = ? AND productId = ? AND COALESCE(size, "") = ? AND COALESCE(color, "") = ?',
-      [req.userId, productId, size || "", color || ""]
+      'SELECT _id, quantity FROM cart_items WHERE user_id = ? AND product_id = ? AND COALESCE(size, "") = ? AND COALESCE(color, "") = ?',
+      [req.user_id, product_id, size || "", color || ""]
     );
 
     if (existingItems.length > 0) {
       // Update existing item
       const newQuantity = existingItems[0].quantity + quantity;
-
       if (product.stock < newQuantity) {
-        return res.status(400).json({ error: "Insufficient stock" });
+        return res.status(400).json({
+          error: "Insufficient stock",
+          code: "INSUFFICIENT_STOCK",
+        });
       }
-
-      await pool.query("UPDATE cart_items SET quantity = ? WHERE id = ?", [
+      await pool.query("UPDATE cart_items SET quantity = ? WHERE _id = ?", [
         newQuantity,
-        existingItems[0].id,
+        existingItems[0]._id,
       ]);
-
-      const [updatedItems] = await pool.query<RowDataPacket[]>(
-        `SELECT 
-          ci.id, ci.userId, ci.productId, ci.quantity, ci.size, ci.color, ci.createdAt,
-          p.name as productName, p.price as productPrice, p.image as productImage, p.stock as productStock
-         FROM cart_items ci
-         JOIN products p ON ci.productId = p.id
-         WHERE ci.id = ?`,
-        [existingItems[0].id]
+    } else {
+      const newId = generateObjectId();
+      await pool.query<ResultSetHeader>(
+        "INSERT INTO cart_items (_id, user_id, product_id, quantity, size, color) VALUES (?, ?, ?, ?, ?, ?)",
+        [newId, req.user_id, product_id, quantity, size || null, color || null]
       );
-
-      return res.json(updatedItems[0]);
     }
-
-    // Create new cart item
-    const [result] = await pool.query<ResultSetHeader>(
-      "INSERT INTO cart_items (userId, productId, quantity, size, color) VALUES (?, ?, ?, ?, ?)",
-      [req.userId, productId, quantity, size || null, color || null]
-    );
-
-    const [newItems] = await pool.query<RowDataPacket[]>(
+    // Always return the full updated cart as an object
+    const [cartItems] = await pool.query<RowDataPacket[]>(
       `SELECT 
-        ci.id, ci.userId, ci.productId, ci.quantity, ci.size, ci.color, ci.createdAt,
-        p.name as productName, p.price as productPrice, p.image as productImage, p.stock as productStock
+        ci._id, ci.user_id, ci.product_id, ci.quantity, ci.size, ci.color, ci.created_at,
+        p.name as product_name, p.price as product_price, p.image as product_image, p.stock as product_stock
        FROM cart_items ci
-       JOIN products p ON ci.productId = p.id
-       WHERE ci.id = ?`,
-      [result.insertId]
+       JOIN products p ON ci.product_id = p._id
+       WHERE ci.user_id = ?
+       ORDER BY ci.created_at DESC`,
+      [req.user_id]
     );
-
-    res.status(201).json(newItems[0]);
+    const subtotal = cartItems.reduce((sum, item) => sum + (item.product_price ?? 0) * item.quantity, 0);
+    const shipping = subtotal > 0 ? (subtotal > 100 ? 0 : 10) : 0;
+    const tax = subtotal * 0.08;
+    const total = subtotal + shipping + tax;
+    res.status(201).json({
+      data: {
+        items: cartItems,
+        totalItems: cartItems.reduce((sum, item) => sum + item.quantity, 0),
+        subtotal,
+        shipping,
+        tax,
+        total,
+      },
+      success: true,
+    });
   } catch (error) {
-    res.status(500).json({ error: "Internal Server Error" });
+    console.error("addToCart error:", error);
+    res.status(500).json({
+      error: "Internal Server Error",
+      details: error,
+    });
   }
 };
 
 export const updateCartItem = async (req: AuthRequest, res: Response) => {
   try {
+
     const { id } = req.params;
     const { quantity } = req.body;
-    const itemId = parseInt(id, 10);
-
-    if (isNaN(itemId)) {
+    if (!id || typeof id !== 'string' || !/^[a-fA-F0-9]{24}$/.test(id)) {
       return res.status(400).json({ error: "Invalid cart item ID" });
     }
-
     if (quantity < 1) {
       return res.status(400).json({ error: "Quantity must be at least 1" });
     }
-
     // Check if cart item belongs to user
-    const [cartItems] = await pool.query<RowDataPacket[]>(
-      "SELECT ci.id, ci.productId, p.stock FROM cart_items ci JOIN products p ON ci.productId = p.id WHERE ci.id = ? AND ci.userId = ?",
-      [itemId, req.userId]
+    const [cartItemRows] = await pool.query<RowDataPacket[]>(
+      "SELECT ci._id, ci.product_id, p.stock FROM cart_items ci JOIN products p ON ci.product_id = p._id WHERE ci._id = ? AND ci.user_id = ?",
+      [id, req.user_id]
     );
-
-    if (cartItems.length === 0) {
+    if (cartItemRows.length === 0) {
       return res.status(404).json({ error: "Cart item not found" });
     }
-
-    const cartItem = cartItems[0];
+    const cartItem = cartItemRows[0];
     if (cartItem.stock < quantity) {
       return res.status(400).json({ error: "Insufficient stock" });
     }
-
-    await pool.query("UPDATE cart_items SET quantity = ? WHERE id = ?", [
+    await pool.query("UPDATE cart_items SET quantity = ? WHERE _id = ?", [
       quantity,
-      itemId,
+      id,
     ]);
 
-    const [updatedItems] = await pool.query<RowDataPacket[]>(
+    // After update, return the full cart as an object
+    const [allCartItems] = await pool.query<RowDataPacket[]>(
       `SELECT 
-        ci.id, ci.userId, ci.productId, ci.quantity, ci.size, ci.color, ci.createdAt,
-        p.name as productName, p.price as productPrice, p.image as productImage, p.stock as productStock
+        ci._id, ci.user_id, ci.product_id, ci.quantity, ci.size, ci.color, ci.created_at,
+        p.name as product_name, p.price as product_price, p.image as product_image, p.stock as product_stock
        FROM cart_items ci
-       JOIN products p ON ci.productId = p.id
-       WHERE ci.id = ?`,
-      [itemId]
+       JOIN products p ON ci.product_id = p._id
+       WHERE ci.user_id = ?
+       ORDER BY ci.created_at DESC`,
+      [req.user_id]
     );
-
-    res.json(updatedItems[0]);
+    const subtotal = allCartItems.reduce((sum, item) => sum + (item.product_price ?? 0) * item.quantity, 0);
+    const shipping = subtotal > 0 ? (subtotal > 100 ? 0 : 10) : 0;
+    const tax = subtotal * 0.08;
+    const total = subtotal + shipping + tax;
+    res.json({
+      data: {
+        items: allCartItems,
+        totalItems: allCartItems.reduce((sum, item) => sum + item.quantity, 0),
+        subtotal,
+        shipping,
+        tax,
+        total,
+      },
+      success: true,
+    });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -181,33 +237,53 @@ export const updateCartItem = async (req: AuthRequest, res: Response) => {
 
 export const removeFromCart = async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
-    const itemId = parseInt(id, 10);
 
-    if (isNaN(itemId)) {
+    const { id } = req.params;
+    if (!id || typeof id !== 'string' || !/^[a-fA-F0-9]{24}$/.test(id)) {
       return res.status(400).json({ error: "Invalid cart item ID" });
     }
-
     // First check if the cart item exists
     const [checkItems] = await pool.query<RowDataPacket[]>(
-      "SELECT id, userId FROM cart_items WHERE id = ?",
-      [itemId]
+      "SELECT _id, user_id FROM cart_items WHERE _id = ?",
+      [id]
     );
-
     if (checkItems.length === 0) {
       return res.status(404).json({ error: "Cart item not found" });
     }
-
-    if (checkItems[0].userId !== req.userId) {
+    if (checkItems[0].user_id !== req.user_id) {
       return res.status(403).json({ error: "Unauthorized" });
     }
-
     const [result] = await pool.query<ResultSetHeader>(
-      "DELETE FROM cart_items WHERE id = ?",
-      [itemId]
+      "DELETE FROM cart_items WHERE _id = ?",
+      [id]
     );
 
-    res.json({ message: "Item removed from cart" });
+    // After remove, return the full cart as an object
+    const [allCartItems] = await pool.query<RowDataPacket[]>(
+      `SELECT 
+        ci._id, ci.user_id, ci.product_id, ci.quantity, ci.size, ci.color, ci.created_at,
+        p.name as product_name, p.price as product_price, p.image as product_image, p.stock as product_stock
+       FROM cart_items ci
+       JOIN products p ON ci.product_id = p._id
+       WHERE ci.user_id = ?
+       ORDER BY ci.created_at DESC`,
+      [req.user_id]
+    );
+    const subtotal = allCartItems.reduce((sum, item) => sum + (item.product_price ?? 0) * item.quantity, 0);
+    const shipping = subtotal > 0 ? (subtotal > 100 ? 0 : 10) : 0;
+    const tax = subtotal * 0.08;
+    const total = subtotal + shipping + tax;
+    res.json({
+      data: {
+        items: allCartItems,
+        totalItems: allCartItems.reduce((sum, item) => sum + item.quantity, 0),
+        subtotal,
+        shipping,
+        tax,
+        total,
+      },
+      success: true,
+    });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -215,9 +291,20 @@ export const removeFromCart = async (req: AuthRequest, res: Response) => {
 
 export const clearCart = async (req: AuthRequest, res: Response) => {
   try {
-    await pool.query("DELETE FROM cart_items WHERE userId = ?", [req.userId]);
+    await pool.query("DELETE FROM cart_items WHERE user_id = ?", [req.user_id]);
 
-    res.json({ message: "Cart cleared" });
+    // After clear, return an empty cart object
+    res.json({
+      data: {
+        items: [],
+        totalItems: 0,
+        subtotal: 0,
+        shipping: 0,
+        tax: 0,
+        total: 0,
+      },
+      success: true,
+    });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }

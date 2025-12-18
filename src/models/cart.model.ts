@@ -1,17 +1,17 @@
 export interface CartItem {
-  id?: number;
-  userId: number;
-  productId: number;
+  _id?: string;
+  user_id?: string;
+  product_id: string;
   quantity: number;
   size?: string;
   color?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
+  created_at?: Date;
+  updated_at?: Date;
 }
 
 export interface CartItemWithProduct extends CartItem {
-  productName: string;
-  productPrice: number;
-  productImage: string;
-  productStock: number;
+  product_name: string;
+  product_price: number;
+  product_image: string;
+  product_stock: number;
 }

@@ -1,20 +1,20 @@
 export interface Order {
-  id?: number;
-  userId: number;
-  totalAmount: number;
+  _id?: string;
+  user_id?: string;
+  total_amount: number;
   status: "pending" | "processing" | "shipped" | "delivered" | "cancelled";
-  shippingAddress: string;
-  shippingCity: string;
-  shippingPostalCode: string;
-  shippingCountry: string;
-  createdAt?: Date;
-  updatedAt?: Date;
+  shipping_address: string;
+  shipping_city: string;
+  shipping_postal_code: string;
+  shipping_country: string;
+  created_at?: Date;
+  updated_at?: Date;
 }
 
 export interface OrderItem {
-  id?: number;
-  orderId: number;
-  productId: number;
+  _id?: string;
+  order_id?: string;
+  product_id?: string;
   quantity: number;
   price: number;
   size?: string;
@@ -24,8 +24,8 @@ export interface OrderItem {
 export interface OrderWithItems extends Order {
   items: Array<
     OrderItem & {
-      productName: string;
-      productImage: string;
+      product_name: string;
+      product_image: string;
     }
   >;
 }

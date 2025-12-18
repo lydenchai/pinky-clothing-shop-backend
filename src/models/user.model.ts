@@ -2,29 +2,29 @@ export interface User {
   id?: number;
   email: string;
   password: string;
-  firstName: string;
-  lastName: string;
+  first_name: string;
+  last_name: string;
   address?: string;
   city?: string;
-  postalCode?: string;
+  postal_code?: string;
   country?: string;
   phone?: string;
   role?: "admin" | "customer";
-  createdAt?: Date;
-  updatedAt?: Date;
+  created_at?: Date;
+  updated_at?: Date;
 }
 
 export interface UserResponse {
-  id: number;
+  _id?: string;
   email: string;
-  firstName: string;
-  lastName: string;
+  first_name: string;
+  last_name: string;
   address?: string;
   city?: string;
-  postalCode?: string;
+  postal_code?: string;
   country?: string;
   phone?: string;
   role?: "admin" | "customer";
-  createdAt?: Date;
-  updatedAt?: Date;
+  created_at?: Date;
+  updated_at?: Date;
 }

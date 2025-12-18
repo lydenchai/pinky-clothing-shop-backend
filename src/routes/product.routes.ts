@@ -14,6 +14,7 @@ router.post(
   productController.createProduct
 );
 router.put("/update/:id", authenticate, productController.updateProduct);
+router.patch("/update/:id", authenticate, productController.updateProduct);
 router.delete("/delete/:id", authenticate, productController.deleteProduct);
 
 export default router;

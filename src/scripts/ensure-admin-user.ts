@@ -20,8 +20,8 @@ export const ensureAdminUser = async () => {
     if (users.length === 0) {
       console.log("User not found. Creating...");
       await connection.query<ResultSetHeader>(
-        `INSERT INTO users (email, password, firstName, lastName, role, address, city, country, phone)
-         VALUES (?, ?, 'Pinky', 'Princess', 'admin', '123 Main St', 'Phnom Penh', 'Cambodia', '+85512345678')`,
+        `INSERT INTO users (_id, email, password, first_name, last_name, role, address, city, country, phone)
+         VALUES (?, ?, ?, 'Pinky', 'Princess', 'admin', '123 Main St', 'Phnom Penh', 'Cambodia', '+85512345678')`,
         [email, hashedPassword]
       );
       console.log("User created successfully.");

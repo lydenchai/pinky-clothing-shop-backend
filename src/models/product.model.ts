@@ -1,5 +1,5 @@
 export interface Product {
-  id?: number;
+  _id?: string;
   name: string;
   description: string;
   price: number;
@@ -8,14 +8,14 @@ export interface Product {
   stock: number;
   sizes?: string;
   colors?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
+  created_at?: Date;
+  updated_at?: Date;
 }
 
 export interface ProductFilter {
   category?: string;
-  minPrice?: number;
-  maxPrice?: number;
+  min_price?: number;
+  max_price?: number;
   search?: string;
-  inStock?: boolean;
+  in_stock?: boolean;
 }

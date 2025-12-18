@@ -145,31 +145,31 @@ A comprehensive RESTful API for an e-commerce clothing shop built with Node.js, 
 
 ### Users Table
 
-- id, email, password, firstName, lastName
-- address, city, postalCode, country, phone
-- createdAt, updatedAt
+- id, email, password, first_name, last_name
+- address, city, postal_code, country, phone
+- created_at, updated_at
 
 ### Products Table
 
 - id, name, description, price, category
 - image, stock, sizes, colors
-- createdAt, updatedAt
+- created_at, updated_at
 
 ### Cart Items Table
 
-- id, userId, productId, quantity
+- id, user_id, product_id, quantity
 - size, color
-- createdAt, updatedAt
+- created_at, updated_at
 
 ### Orders Table
 
-- id, userId, totalAmount, status
-- shippingAddress, shippingCity, shippingPostalCode, shippingCountry
-- createdAt, updatedAt
+- id, user_id, total_amount, status
+- shippingAddress, shippingCity, shippingpostal_code, shippingCountry
+- created_at, updated_at
 
 ### Order Items Table
 
-- id, orderId, productId, quantity, price
+- id, order_id, product_id, quantity, price
 - size, color
 
 ## Project Structure

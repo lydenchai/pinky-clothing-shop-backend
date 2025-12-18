@@ -1,7 +1,7 @@
 export interface AnalyticsEvent {
-  id?: number;
+  _id?: string;
   type: string;
-  userId?: number;
+  user_id?: number;
   data?: string;
-  createdAt?: Date;
+  created_at?: Date;
 }

@@ -62,12 +62,13 @@ export const getAllProducts = async (req: Request, res: Response) => {
     const totalPages = Math.ceil(totalItems / itemsPerPage);
 
     // Add pagination to query
-    query += " ORDER BY createdAt DESC LIMIT ? OFFSET ?";
+    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
     params.push(itemsPerPage, offset);
 
     const [products] = await pool.query<RowDataPacket[]>(query, params);
 
     res.json({
+      success: true,
       data: products,
       pagination: {
         page: currentPage,
@@ -75,7 +76,6 @@ export const getAllProducts = async (req: Request, res: Response) => {
         totalItems,
         totalPages,
       },
-      message: "success",
     });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
@@ -85,16 +85,14 @@ export const getAllProducts = async (req: Request, res: Response) => {
 export const getProductById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-
     const [products] = await pool.query<RowDataPacket[]>(
-      "SELECT * FROM products WHERE id = ?",
+      "SELECT * FROM products WHERE _id = ?",
       [id]
     );
-
     if (products.length === 0) {
       return res.status(404).json({ data: null, message: "Product not found" });
     }
-    res.json({ data: products[0], message: "success" });
+    res.json({ data: products[0], success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -109,11 +107,14 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
 
     const { name, description, price, category, image, stock, sizes, colors } =
       req.body;
-
-    const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO products (name, description, price, category, image, stock, sizes, colors)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    // Generate a UUID for _id
+    const { v4: uuidv4 } = require("uuid");
+    const _id = uuidv4();
+    await pool.query<ResultSetHeader>(
+      `INSERT INTO products (_id, name, description, price, category, image, stock, sizes, colors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        _id,
         name,
         description,
         price,
@@ -124,12 +125,11 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
         colors || null,
       ]
     );
-
     const [products] = await pool.query<RowDataPacket[]>(
-      "SELECT * FROM products WHERE id = ?",
-      [result.insertId]
+      "SELECT * FROM products WHERE _id = ?",
+      [_id]
     );
-    res.status(201).json({ data: products[0], message: "success" });
+    res.status(201).json({ data: products[0], success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -140,7 +140,6 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     let { name, description, price, category, image, stock, sizes, colors } =
       req.body;
-
     // Convert arrays to comma-separated strings if needed
     if (Array.isArray(sizes)) {
       sizes = sizes.join(",");
@@ -148,10 +147,9 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
     if (Array.isArray(colors)) {
       colors = colors.join(",");
     }
-
     const [result] = await pool.query<ResultSetHeader>(
       `UPDATE products SET name = ?, description = ?, price = ?, category = ?, image = ?, stock = ?, sizes = ?, colors = ?
-       WHERE id = ?`,
+       WHERE _id = ?`,
       [
         name,
         description,
@@ -164,15 +162,14 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
         id,
       ]
     );
-
     if (result.affectedRows === 0) {
       return res.status(404).json({ data: null, message: "Product not found" });
     }
     const [products] = await pool.query<RowDataPacket[]>(
-      "SELECT * FROM products WHERE id = ?",
+      "SELECT * FROM products WHERE _id = ?",
       [id]
     );
-    res.json({ data: products[0], message: "success" });
+    res.json({ data: products[0], success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -181,12 +178,10 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
 export const deleteProduct = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-
     const [result] = await pool.query<ResultSetHeader>(
-      "DELETE FROM products WHERE id = ?",
+      "DELETE FROM products WHERE _id = ?",
       [id]
     );
-
     if (result.affectedRows === 0) {
       return res.status(404).json({ data: null, message: "Product not found" });
     }
@@ -202,7 +197,7 @@ export const getCategories = async (req: Request, res: Response) => {
       "SELECT DISTINCT category FROM products ORDER BY category"
     );
 
-    res.json({ data: categories.map((c) => c.category), message: "success" });
+    res.json({ data: categories.map((c) => c.category), success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }

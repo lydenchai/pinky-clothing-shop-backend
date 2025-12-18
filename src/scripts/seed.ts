@@ -1,6 +1,13 @@
 import { pool } from "../config/database";
 import bcrypt from "bcryptjs";
 import { ResultSetHeader } from "mysql2";
+import crypto from "crypto";
+
+export function generateObjectId(): string {
+  const timestamp = Math.floor(Date.now() / 1000).toString(16);
+  const random = crypto.randomBytes(8).toString("hex");
+  return timestamp + random; // 24 chars
+}
 
 // Product templates for generating realistic products
 const productTemplates = {
@@ -410,13 +417,14 @@ function generateProducts(count: number = 100) {
 
 const seedUsers = [
   {
+    _id: generateObjectId(),
     email: "pinky@example.com",
     password: "password123",
-    firstName: "Pinky",
-    lastName: "Princess",
+    first_name: "Pinky",
+    last_name: "Princess",
     address: "123 Main Street",
     city: "Phnom Penh",
-    postalCode: "12000",
+    postal_code: "12000",
     country: "Cambodia",
     phone: "+85512345678",
     role: "admin",
@@ -434,22 +442,22 @@ export const seed = async () => {
     console.log(`Generated ${seedProducts.length} products.`);
 
     // Seed users
-    console.log("Seeding users...");
     for (const user of seedUsers) {
       const hashedPassword = await bcrypt.hash(user.password, 10);
 
       await connection.query<ResultSetHeader>(
-        `INSERT INTO users (email, password, firstName, lastName, address, city, postalCode, country, phone, role)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO users (_id, email, password, first_name, last_name, address, city, postal_code, country, phone, role)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE email = email`,
         [
+          user._id,
           user.email,
           hashedPassword,
-          user.firstName,
-          user.lastName,
+          user.first_name,
+          user.last_name,
           user.address,
           user.city,
-          user.postalCode,
+          user.postal_code,
           user.country,
           user.phone,
           user.role,
@@ -457,14 +465,12 @@ export const seed = async () => {
       );
     }
     console.log("Users seeded.");
-
-    // Seed products
-    console.log("Seeding products...");
     for (const product of seedProducts) {
       await connection.query<ResultSetHeader>(
-        `INSERT INTO products (name, description, price, category, image, stock, sizes, colors)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO products (_id, name, description, price, category, image, stock, sizes, colors)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
+          generateObjectId(),
           product.name,
           product.description,
           product.price,
@@ -477,8 +483,6 @@ export const seed = async () => {
       );
     }
     console.log("Products seeded.");
-
-    console.log("Seed completed successfully.");
   } catch (error) {
     console.error("Seed failed:", error);
     throw error;

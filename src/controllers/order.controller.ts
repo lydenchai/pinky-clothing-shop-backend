@@ -1,80 +1,3 @@
-// Get all orders for admin
-export const getAllOrders = async (req: AuthRequest, res: Response) => {
-  try {
-    const page = parseInt((req.query.page as string) || "1", 10) || 1;
-    const limit = parseInt((req.query.limit as string) || "15", 10) || 15;
-    const offset = (page - 1) * limit;
-
-    // total orders
-    const [countRows] = await pool.query<RowDataPacket[]>(
-      "SELECT COUNT(*) as total FROM orders"
-    );
-    const total =
-      Array.isArray(countRows) && (countRows as any)[0]
-        ? (countRows as any)[0].total
-        : 0;
-
-    const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS productName, p.image AS productImage,
-              u.email AS userEmail, u.firstName AS userFirstName, u.lastName AS userLastName
-         FROM orders o
-         LEFT JOIN order_items oi ON o.id = oi.orderId
-         LEFT JOIN products p ON oi.productId = p.id
-         LEFT JOIN users u ON o.userId = u.id
-         ORDER BY o.updatedAt DESC, o.id DESC
-         LIMIT ? OFFSET ?`,
-      [limit, offset]
-    );
-    const map: any = {};
-    rows.forEach((row) => {
-      if (!map[row.orderId]) {
-        map[row.orderId] = {
-          id: row.orderId,
-          userId: row.userId,
-          userEmail: row.userEmail,
-          userFirstName: row.userFirstName,
-          userLastName: row.userLastName,
-          totalAmount: row.totalAmount,
-          status: row.status,
-          shippingAddress: row.shippingAddress,
-          shippingCity: row.shippingCity,
-          shippingPostalCode: row.shippingPostalCode,
-          shippingCountry: row.shippingCountry,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-          items: [],
-        };
-      }
-      if (row.itemId) {
-        map[row.orderId].items.push({
-          id: row.itemId,
-          productId: row.productId,
-          quantity: row.quantity,
-          price: row.price,
-          size: row.size,
-          color: row.color,
-          productName: row.productName,
-          productImage: row.productImage,
-        });
-      }
-    });
-
-    res.json({
-      data: Object.values(map),
-      pagination: {
-        page,
-        limit,
-        totalItems: total,
-        totalPages: Math.ceil(total / limit),
-      },
-      message: "success",
-    });
-  } catch (error) {
-    console.error("getAllOrders error:", error);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
-};
 import { Response } from "express";
 import { pool } from "../config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
@@ -102,6 +25,83 @@ export const orderValidation = [
     return true;
   }),
 ];
+// Get all orders for admin
+export const getAllOrders = async (req: AuthRequest, res: Response) => {
+  try {
+    const page = parseInt((req.query.page as string) || "1", 10) || 1;
+    const limit = parseInt((req.query.limit as string) || "15", 10) || 15;
+    const offset = (page - 1) * limit;
+
+    // total orders
+    const [countRows] = await pool.query<RowDataPacket[]>(
+      "SELECT COUNT(*) as total FROM orders"
+    );
+    const total =
+      Array.isArray(countRows) && (countRows as any)[0]
+        ? (countRows as any)[0].total
+        : 0;
+
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT o._id AS order_id, o.*, oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
+              p.name AS product_name, p.image AS product_image,
+              u.email AS userEmail, u.first_name AS userfirst_name, u.last_name AS userlast_name
+         FROM orders o
+         LEFT JOIN order_items oi ON o._id = oi.order_id
+         LEFT JOIN products p ON oi.product_id = p._id
+         LEFT JOIN users u ON o.user_id = u._id
+         ORDER BY o.updated_at DESC, o._id DESC
+         LIMIT ? OFFSET ?`,
+      [limit, offset]
+    );
+    const map: any = {};
+    rows.forEach((row) => {
+      if (!map[row.order_id]) {
+        map[row.order_id] = {
+          id: row.order_id,
+          user_id: row.user_id,
+          userEmail: row.userEmail,
+          userfirst_name: row.userfirst_name,
+          userlast_name: row.userlast_name,
+          total_amount: row.total_amount,
+          status: row.status,
+          shippingAddress: row.shippingAddress,
+          shippingCity: row.shippingCity,
+          shippingpostal_code: row.shippingpostal_code,
+          shippingCountry: row.shippingCountry,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          items: [],
+        };
+      }
+      if (row.item_id) {
+        map[row.order_id].items.push({
+          id: row.item_id,
+          product_id: row.product_id,
+          quantity: row.quantity,
+          price: row.price,
+          size: row.size,
+          color: row.color,
+          product_name: row.product_name,
+          product_image: row.product_image,
+        });
+      }
+    });
+
+    res.json({
+      success: true,
+      data: Object.values(map),
+      pagination: {
+        page,
+        limit,
+        totalItems: total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("getAllOrders error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
 
 /* ----------------------------- CREATE ORDER --------------------------- */
 export const createOrder = async (req: AuthRequest, res: Response) => {
@@ -111,74 +111,74 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
-    let shippingAddress = "",
-      shippingCity = "",
-      shippingPostalCode = "",
-      shippingCountry = "";
+    let shipping_address = "",
+      shipping_city = "",
+      shipping_postal_code = "",
+      shipping_country = "";
     if (req.body.address) {
       const a = req.body.address;
-      shippingAddress = `${a.house || ""} ${a.street || ""} ${
+      shipping_address = `${a.house || ""} ${a.street || ""} ${
         a.village || ""
       } ${a.commune || ""} ${a.district || ""} ${a.province || ""}`.trim();
-      shippingCity = a.province || "";
-      shippingPostalCode = a.postalCode || "";
-      shippingCountry = a.country || "Cambodia";
+      shipping_city = a.province || "";
+      shipping_postal_code = a.postal_code || "";
+      shipping_country = a.country || "Cambodia";
     } else {
-      shippingAddress = req.body.shippingAddress;
-      shippingCity = req.body.shippingCity;
-      shippingPostalCode = req.body.shippingPostalCode;
-      shippingCountry = req.body.shippingCountry;
+      shipping_address = req.body.shipping_address;
+      shipping_city = req.body.shipping_city;
+      shipping_postal_code = req.body.shipping_postal_code;
+      shipping_country = req.body.shipping_country;
     }
     await connection.beginTransaction();
 
     // Get cart items
-    const [cartItems] = await connection.query<RowDataPacket[]>(
-      `SELECT ci.productId, ci.quantity, ci.size, ci.color, p.price, p.stock
+    const [cart_items] = await connection.query<RowDataPacket[]>(
+      `SELECT ci.product_id, ci.quantity, ci.size, ci.color, p.price, p.stock
        FROM cart_items ci
-       JOIN products p ON ci.productId = p.id
-       WHERE ci.userId = ?`,
-      [req.userId]
+       JOIN products p ON ci.product_id = p._id
+       WHERE ci.user_id = ?`,
+      [req.user_id]
     );
-    if (cartItems.length === 0) {
+    if (cart_items.length === 0) {
       await connection.rollback();
       return res.status(400).json({ error: "Cart is empty" });
     }
 
     // Calculate total & validate stock
-    let totalAmount = 0;
-    for (const item of cartItems) {
+    let total_amount = 0;
+    for (const item of cart_items) {
       if (item.stock < item.quantity) {
         await connection.rollback();
         return res.status(400).json({
-          error: `Insufficient stock for product ID ${item.productId}`,
+          error: `Insufficient stock for product ID ${item.product_id}`,
         });
       }
-      totalAmount += item.price * item.quantity;
+      total_amount += item.price * item.quantity;
     }
 
     // Create order
     const [orderResult] = await connection.query<ResultSetHeader>(
-      `INSERT INTO orders (userId, totalAmount, status, shippingAddress, shippingCity, shippingPostalCode, shippingCountry)
+      `INSERT INTO orders (user_id, total_amount, status, shipping_address, shipping_city, shipping_postal_code, shipping_country)
        VALUES (?, ?, 'pending', ?, ?, ?, ?)`,
       [
-        req.userId,
-        totalAmount,
-        shippingAddress,
-        shippingCity,
-        shippingPostalCode,
-        shippingCountry,
+        req.user_id,
+        total_amount,
+        shipping_address,
+        shipping_city,
+        shipping_postal_code,
+        shipping_country,
       ]
     );
-    const orderId = orderResult.insertId;
+    const order_id = orderResult.insert_id;
 
     // Insert items + update stock
-    for (const item of cartItems) {
+    for (const item of cart_items) {
       await connection.query(
-        `INSERT INTO order_items (orderId, productId, quantity, price, size, color)
+        `INSERT INTO order_items (order_id, product_id, quantity, price, size, color)
          VALUES (?, ?, ?, ?, ?, ?)`,
         [
-          orderId,
-          item.productId,
+          order_id,
+          item.product_id,
           item.quantity,
           item.price,
           item.size || null,
@@ -186,57 +186,57 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         ]
       );
       await connection.query(
-        "UPDATE products SET stock = stock - ? WHERE id = ?",
-        [item.quantity, item.productId]
+        "UPDATE products SET stock = stock - ? WHERE _id = ?",
+        [item.quantity, item.product_id]
       );
     }
 
     // Clear cart
-    await connection.query("DELETE FROM cart_items WHERE userId = ?", [
-      req.userId,
+    await connection.query("DELETE FROM cart_items WHERE user_id = ?", [
+      req.user_id,
     ]);
     await connection.commit();
 
     // Fetch order with items
     const [rows] = await connection.query<RowDataPacket[]>(
-      `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS productName, p.image AS productImage
+      `SELECT o._id AS order_id, o.*, oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
+              p.name AS product_name, p.image AS product_image
          FROM orders o
-         LEFT JOIN order_items oi ON o.id = oi.orderId
-         LEFT JOIN products p ON oi.productId = p.id
-         WHERE o.id = ?`,
-      [orderId]
+         LEFT JOIN order_items oi ON o._id = oi.order_id
+         LEFT JOIN products p ON oi.product_id = p._id
+         WHERE o._id = ?`,
+      [order_id]
     );
     if (!rows.length) return res.status(404).json({ error: "Order not found" });
 
     const order: any = {
-      id: rows[0].orderId,
-      userId: rows[0].userId,
-      totalAmount: rows[0].totalAmount,
+      id: rows[0].order_id,
+      user_id: rows[0].user_id,
+      total_amount: rows[0].total_amount,
       status: rows[0].status,
-      shippingAddress: rows[0].shippingAddress,
-      shippingCity: rows[0].shippingCity,
-      shippingPostalCode: rows[0].shippingPostalCode,
-      shippingCountry: rows[0].shippingCountry,
-      createdAt: rows[0].createdAt,
-      updatedAt: rows[0].updatedAt,
+      shipping_address: rows[0].shipping_address,
+      shipping_city: rows[0].shipping_city,
+      shipping_postal_code: rows[0].shipping_postal_code,
+      shipping_country: rows[0].shipping_country,
+      created_at: rows[0].created_at,
+      updated_at: rows[0].updated_at,
       items: [],
     };
     rows.forEach((row) => {
-      if (row.itemId) {
+      if (row.item_id) {
         order.items.push({
-          id: row.itemId,
-          productId: row.productId,
+          id: row.item_id,
+          product_id: row.product_id,
           quantity: row.quantity,
           price: row.price,
           size: row.size,
           color: row.color,
-          productName: row.productName,
-          productImage: row.productImage,
+          product_name: row.product_name,
+          product_image: row.product_image,
         });
       }
     });
-    res.status(201).json({ data: order, message: "success" });
+    res.status(201).json({ data: order, success: true });
   } catch (error) {
     await connection.rollback();
     console.error("createOrder error:", error);
@@ -251,19 +251,19 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
   try {
     // Check if user is admin
     const [userRows] = await pool.query<RowDataPacket[]>(
-      "SELECT role FROM users WHERE id = ?",
-      [req.userId]
+      "SELECT role FROM users WHERE _id = ?",
+      [req.user_id]
     );
     const isAdmin = userRows.length && userRows[0].role === "admin";
-    let query = `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS productName, p.image AS productImage
+    let query = `SELECT o._id AS order_id, o.*, oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
+              p.name AS product_name, p.image AS product_image
          FROM orders o
-         LEFT JOIN order_items oi ON o.id = oi.orderId
-         LEFT JOIN products p ON oi.productId = p.id`;
+         LEFT JOIN order_items oi ON o._id = oi.order_id
+         LEFT JOIN products p ON oi.product_id = p._id`;
     let params: any[] = [];
     if (!isAdmin) {
-      query += " WHERE o.userId = ?";
-      params.push(req.userId);
+      query += " WHERE o.user_id = ?";
+      params.push(req.user_id);
     }
     // pagination
     const page = parseInt((req.query.page as string) || "1", 10) || 1;
@@ -271,11 +271,11 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
     const offset = (page - 1) * limit;
 
     // count total with same filter
-    let countQuery = "SELECT COUNT(DISTINCT o.id) as total FROM orders o";
+    let countQuery = "SELECT COUNT(DISTINCT o._id) as total FROM orders o";
     const countParams: any[] = [];
     if (!isAdmin) {
-      countQuery += " WHERE o.userId = ?";
-      countParams.push(req.userId);
+      countQuery += " WHERE o.user_id = ?";
+      countParams.push(req.user_id);
     }
     const [countRows] = await pool.query<RowDataPacket[]>(
       countQuery,
@@ -286,41 +286,42 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
         ? (countRows as any)[0].total
         : 0;
 
-    query += " ORDER BY o.updatedAt DESC, o.id DESC LIMIT ? OFFSET ?";
+    query += " ORDER BY o.updated_at DESC, o._id DESC LIMIT ? OFFSET ?";
     params.push(limit, offset);
     const [rows] = await pool.query<RowDataPacket[]>(query, params);
     const map: any = {};
     rows.forEach((row) => {
-      if (!map[row.orderId]) {
-        map[row.orderId] = {
-          id: row.orderId,
-          userId: row.userId,
-          totalAmount: row.totalAmount,
+      if (!map[row.order_id]) {
+        map[row.order_id] = {
+          id: row.order_id,
+          user_id: row.user_id,
+          total_amount: row.total_amount,
           status: row.status,
-          shippingAddress: row.shippingAddress,
-          shippingCity: row.shippingCity,
-          shippingPostalCode: row.shippingPostalCode,
-          shippingCountry: row.shippingCountry,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
+          shipping_address: row.shipping_address,
+          shipping_city: row.shipping_city,
+          shipping_postal_code: row.shipping_postal_code,
+          shipping_country: row.shipping_country,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
           items: [],
         };
       }
-      if (row.itemId) {
-        map[row.orderId].items.push({
-          id: row.itemId,
-          productId: row.productId,
+      if (row.item_id) {
+        map[row.order_id].items.push({
+          id: row.item_id,
+          product_id: row.product_id,
           quantity: row.quantity,
           price: row.price,
           size: row.size,
           color: row.color,
-          productName: row.productName,
-          productImage: row.productImage,
+          product_name: row.product_name,
+          product_image: row.product_image,
         });
       }
     });
 
     res.json({
+      success: true,
       data: Object.values(map),
       pagination: {
         page,
@@ -328,7 +329,6 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
         totalItems: total,
         totalPages: Math.ceil(total / limit),
       },
-      message: "success",
     });
   } catch (error) {
     console.error("getOrders error:", error);
@@ -339,55 +339,55 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
 /* ---------------------------- GET ORDER BY ID ------------------------- */
 export const getOrderById = async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const { _id } = req.params;
     // Check if user is admin
     const [userRows] = await pool.query<RowDataPacket[]>(
-      "SELECT role FROM users WHERE id = ?",
-      [req.userId]
+      "SELECT role FROM users WHERE _id = ?",
+      [req.user_id]
     );
     const isAdmin = userRows.length && userRows[0].role === "admin";
-    let query = `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS productName, p.image AS productImage
+    let query = `SELECT o._id AS order_id, o.*, oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
+              p.name AS product_name, p.image AS product_image
          FROM orders o
-         LEFT JOIN order_items oi ON o.id = oi.orderId
-         LEFT JOIN products p ON oi.productId = p.id
-         WHERE o.id = ?`;
-    let params: any[] = [id];
+         LEFT JOIN order_items oi ON o._id = oi.order_id
+         LEFT JOIN products p ON oi.product_id = p._id
+         WHERE o._id = ?`;
+    let params: any[] = [_id];
     if (!isAdmin) {
-      query += " AND o.userId = ?";
-      params.push(req.userId);
+      query += " AND o.user_id = ?";
+      params.push(req.user_id);
     }
     const [rows] = await pool.query<RowDataPacket[]>(query, params);
     if (!rows.length) return res.status(404).json({ error: "Order not found" });
 
     const order: any = {
-      id: rows[0].orderId,
-      userId: rows[0].userId,
-      totalAmount: rows[0].totalAmount,
+      _id: rows[0].order_id,
+      user_id: rows[0].user_id,
+      total_amount: rows[0].total_amount,
       status: rows[0].status,
-      shippingAddress: rows[0].shippingAddress,
-      shippingCity: rows[0].shippingCity,
-      shippingPostalCode: rows[0].shippingPostalCode,
-      shippingCountry: rows[0].shippingCountry,
-      createdAt: rows[0].createdAt,
-      updatedAt: rows[0].updatedAt,
+      shipping_address: rows[0].shipping_address,
+      shipping_city: rows[0].shipping_city,
+      shipping_postal_code: rows[0].shipping_postal_code,
+      shipping_country: rows[0].shipping_country,
+      created_at: rows[0].created_at,
+      updated_at: rows[0].updated_at,
       items: [],
     };
     rows.forEach((row) => {
-      if (row.itemId) {
+      if (row.item_id) {
         order.items.push({
-          id: row.itemId,
-          productId: row.productId,
+          _id: row.item_id,
+          product_id: row.product_id,
           quantity: row.quantity,
           price: row.price,
           size: row.size,
           color: row.color,
-          productName: row.productName,
-          productImage: row.productImage,
+          product_name: row.product_name,
+          product_image: row.product_image,
         });
       }
     });
-    res.json({ data: order, message: "success" });
+    res.json({ data: order, success: true });
   } catch (error) {
     console.error("getOrderById error:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -397,7 +397,7 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
 /* --------------------------- UPDATE ORDER STATUS ---------------------- */
 export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const { _id } = req.params;
     const { status } = req.body;
     const valid = [
       "pending",
@@ -411,19 +411,19 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     }
     // Determine if the requester is an admin. Admins may update any order.
     const [userRows] = await pool.query<RowDataPacket[]>(
-      "SELECT role FROM users WHERE id = ?",
-      [req.userId]
+      "SELECT role FROM users WHERE _id = ?",
+      [req.user_id]
     );
     const isAdmin = userRows.length && userRows[0].role === "admin";
 
     let query: string;
     let params: any[];
     if (isAdmin) {
-      query = `UPDATE orders SET status = ?, updatedAt = NOW() WHERE id = ?`;
-      params = [status, id];
+      query = `UPDATE orders SET status = ?, updated_at = NOW() WHERE _id = ?`;
+      params = [status, _id];
     } else {
-      query = `UPDATE orders SET status = ?, updatedAt = NOW() WHERE id = ? AND userId = ?`;
-      params = [status, id, req.userId];
+      query = `UPDATE orders SET status = ?, updated_at = NOW() WHERE _id = ? AND user_id = ?`;
+      params = [status, _id, req.user_id];
     }
 
     const [result] = await pool.query<ResultSetHeader>(query, params);
@@ -434,43 +434,43 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     }
     // Return the full order object (including items) so frontend keeps rendering correctly
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT o.id AS orderId, o.*, oi.id AS itemId, oi.productId, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS productName, p.image AS productImage
+      `SELECT o._id AS order_id, o.*, oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
+              p.name AS product_name, p.image AS product_image
          FROM orders o
-         LEFT JOIN order_items oi ON o.id = oi.orderId
-         LEFT JOIN products p ON oi.productId = p.id
-         WHERE o.id = ?`,
-      [id]
+         LEFT JOIN order_items oi ON o._id = oi.order_id
+         LEFT JOIN products p ON oi.product_id = p._id
+         WHERE o._id = ?`,
+      [_id]
     );
     if (!rows.length) return res.status(404).json({ error: "Order not found" });
     const order: any = {
-      id: rows[0].orderId,
-      userId: rows[0].userId,
-      totalAmount: rows[0].totalAmount,
+      _id: rows[0].order_id,
+      user_id: rows[0].user_id,
+      total_amount: rows[0].total_amount,
       status: rows[0].status,
-      shippingAddress: rows[0].shippingAddress,
-      shippingCity: rows[0].shippingCity,
-      shippingPostalCode: rows[0].shippingPostalCode,
-      shippingCountry: rows[0].shippingCountry,
-      createdAt: rows[0].createdAt,
-      updatedAt: rows[0].updatedAt,
+      shipping_address: rows[0].shipping_address,
+      shipping_city: rows[0].shipping_city,
+      shipping_postal_code: rows[0].shipping_postal_code,
+      shipping_country: rows[0].shipping_country,
+      created_at: rows[0].created_at,
+      updated_at: rows[0].updated_at,
       items: [],
     };
     rows.forEach((row) => {
-      if (row.itemId) {
+      if (row.item_id) {
         order.items.push({
-          id: row.itemId,
-          productId: row.productId,
+          id: row.item_id,
+          product_id: row.product_id,
           quantity: row.quantity,
           price: row.price,
           size: row.size,
           color: row.color,
-          productName: row.productName,
-          productImage: row.productImage,
+          product_name: row.product_name,
+          product_image: row.product_image,
         });
       }
     });
-    res.json({ data: order, message: "success" });
+    res.json({ data: order, success: true });
   } catch (error) {
     console.error("updateOrderStatus error:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -486,48 +486,48 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
-    let shippingAddress = "",
-      shippingCity = "",
-      shippingPostalCode = "",
-      shippingCountry = "";
+    let shipping_address = "",
+      shipping_city = "",
+      shipping_postal_code = "",
+      shipping_country = "";
     if (req.body.address) {
       const a = req.body.address;
-      shippingAddress = `${a.house || ""} ${a.street || ""} ${
+      shipping_address = `${a.house || ""} ${a.street || ""} ${
         a.village || ""
       } ${a.commune || ""} ${a.district || ""} ${a.province || ""}`.trim();
-      shippingCity = a.province || "";
-      shippingPostalCode = a.postalCode || "";
-      shippingCountry = a.country || "Cambodia";
+      shipping_city = a.province || "";
+      shipping_postal_code = a.postal_code || "";
+      shipping_country = a.country || "Cambodia";
     } else {
-      shippingAddress = req.body.shippingAddress;
-      shippingCity = req.body.shippingCity;
-      shippingPostalCode = req.body.shippingPostalCode;
-      shippingCountry = req.body.shippingCountry;
+      shipping_address = req.body.shipping_address;
+      shipping_city = req.body.shipping_city;
+      shipping_postal_code = req.body.shipping_postal_code;
+      shipping_country = req.body.shipping_country;
     }
-    const [cartItems] = await pool.query<RowDataPacket[]>(
-      `SELECT ci.productId, ci.quantity, ci.size, ci.color, p.price, p.stock, p.name AS productName, p.image AS productImage
+    const [cart_items] = await pool.query<RowDataPacket[]>(
+      `SELECT ci.product_id, ci.quantity, ci.size, ci.color, p.price, p.stock, p.name AS product_name, p.image AS product_image
          FROM cart_items ci
-         JOIN products p ON ci.productId = p.id
-         WHERE ci.userId = ?`,
-      [req.userId]
+         JOIN products p ON ci.product_id = p._id
+         WHERE ci.user_id = ?`,
+      [req.user_id]
     );
-    if (cartItems.length === 0) {
+    if (cart_items.length === 0) {
       return res.status(400).json({ error: "Cart is empty" });
     }
     let subtotal = 0;
     const outOfStock: any[] = [];
-    const items = cartItems.map((item) => {
+    const items = cart_items.map((item) => {
       if (item.stock < item.quantity) {
         outOfStock.push({
-          productId: item.productId,
-          productName: item.productName,
+          product_id: item.product_id,
+          product_name: item.product_name,
         });
       }
       subtotal += item.price * item.quantity;
       return {
-        productId: item.productId,
-        productName: item.productName,
-        productImage: item.productImage,
+        product_id: item.product_id,
+        product_name: item.product_name,
+        product_image: item.product_image,
         quantity: item.quantity,
         price: item.price,
         size: item.size,
@@ -550,12 +550,12 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
         shipping,
         tax,
         total,
-        shippingAddress,
-        shippingCity,
-        shippingPostalCode,
-        shippingCountry,
+        shipping_address,
+        shipping_city,
+        shipping_postal_code,
+        shipping_country,
       },
-      message: "success",
+      success: true,
     });
   } catch (error) {
     console.error("orderSummary error:", error);
@@ -567,43 +567,43 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
 export const getOrderSummary = async (req: AuthRequest, res: Response) => {
   try {
     const {
-      shippingAddress,
-      shippingCity,
-      shippingPostalCode,
-      shippingCountry,
+      shipping_address,
+      shipping_city,
+      shipping_postal_code,
+      shipping_country,
     } = req.body;
 
     // Get cart items for user
-    const [cartItems] = await pool.query<RowDataPacket[]>(
-      `SELECT ci.productId, ci.quantity, ci.size, ci.color, p.price, p.name, p.image
+    const [cart_items] = await pool.query<RowDataPacket[]>(
+      `SELECT ci.product_id, ci.quantity, ci.size, ci.color, p.price, p.name, p.image
        FROM cart_items ci
-       JOIN products p ON ci.productId = p.id
-       WHERE ci.userId = ?`,
-      [req.userId]
+       JOIN products p ON ci.product_id = p._id
+       WHERE ci.user_id = ?`,
+      [req.user_id]
     );
-    if (cartItems.length === 0) {
+    if (cart_items.length === 0) {
       return res.status(400).json({ error: "Cart is empty" });
     }
 
     // Calculate total
-    let totalAmount = 0;
-    for (const item of cartItems) {
-      totalAmount += item.price * item.quantity;
+    let total_amount = 0;
+    for (const item of cart_items) {
+      total_amount += item.price * item.quantity;
     }
 
     // Return summary
     res.json({
       data: {
-        items: cartItems,
-        total: totalAmount,
+        items: cart_items,
+        total: total_amount,
         shipping: {
-          address: shippingAddress,
-          city: shippingCity,
-          postalCode: shippingPostalCode,
-          country: shippingCountry,
+          address: shipping_address,
+          city: shipping_city,
+          postal_code: shipping_postal_code,
+          country: shipping_country,
         },
       },
-      message: "success",
+      success: true,
     });
   } catch (error) {
     res.status(500).json({ error: "Failed to prepare order summary" });

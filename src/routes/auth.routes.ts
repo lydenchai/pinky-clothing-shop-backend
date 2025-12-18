@@ -10,6 +10,7 @@ router.post(
   authController.register
 );
 router.post("/login", authController.loginValidation, authController.login);
+router.post("/logout", authenticate, authController.logout);
 router.get("/profile", authenticate, authController.getProfile);
 router.patch("/profile", authenticate, authController.updateProfile);
 

@@ -3,11 +3,11 @@ export const adminOnly = (
   res: Response,
   next: NextFunction
 ) => {
-  // Assume req.userId is set by authenticate middleware
+  // Assume req.user_id is set by authenticate middleware
   // Query user role from database
   import("../config/database").then(({ pool }) => {
     pool
-      .query("SELECT role FROM users WHERE id = ?", [req.userId])
+      .query("SELECT role FROM users WHERE _id = ?", [req.user_id])
       .then(([rows]: any) => {
         if (rows.length && rows[0].role === "admin") {
           next();
@@ -25,7 +25,7 @@ import jwt from "jsonwebtoken";
 import { config } from "../config";
 
 export interface AuthRequest extends Request {
-  userId?: number;
+  user_id?: string;
 }
 
 export const authenticate = (
@@ -35,15 +35,14 @@ export const authenticate = (
 ) => {
   try {
     const authHeader = req.headers.authorization;
-
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({ error: "No token provided" });
     }
-
     const token = authHeader.substring(7);
-
-    const decoded = jwt.verify(token, config.jwt.secret) as { userId: number };
-    req.userId = decoded.userId;
+    const decoded = jwt.verify(token, config.jwt.secret) as {
+      user_id?: string;
+    };
+    req.user_id = decoded.user_id;
 
     next();
   } catch (error) {

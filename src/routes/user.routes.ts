@@ -5,7 +5,9 @@ import { authenticate } from "../middleware/auth.middleware";
 const router = Router();
 
 router.get("/", authenticate, userController.getAllUsers);
+router.post("/create", userController.createUser);
 router.get("/find/:id", authenticate, userController.getUserById);
+router.patch("/update/:id", authenticate, userController.updateUser);
 router.delete("/delete/:id", authenticate, userController.deleteUser);
 router.patch("/:id/role", authenticate, userController.updateUserRole);
 

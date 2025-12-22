@@ -6,11 +6,26 @@ import { AuthRequest } from "../middleware/auth.middleware";
 import { generateObjectId } from "./auth.controller";
 
 export const cartItemValidation = [
-  body("product_id")
-    .isString()
-    .isLength({ min: 36, max: 36 })
-    .withMessage("Valid product ID is required (36-char UUID)"),
-  body("quantity").isInt({ min: 1 }).withMessage("Quantity must be at least 1"),
+  // Accept both flat and nested 'data.product_id' and 'quantity'
+  body().custom((value, { req }) => {
+    const body = req.body.data ? req.body.data : req.body;
+    const product_id = body.product_id;
+    // Accept both 24-char Mongo IDs and 36-char UUIDs
+    const isMongoId = typeof product_id === 'string' && /^[a-fA-F0-9]{24}$/.test(product_id);
+    const isUUID = typeof product_id === 'string' && product_id.length === 36;
+    if (!isMongoId && !isUUID) {
+      throw new Error('Valid product ID is required (24-char MongoID or 36-char UUID)');
+    }
+    return true;
+  }),
+  body().custom((value, { req }) => {
+    const body = req.body.data ? req.body.data : req.body;
+    const quantity = body.quantity;
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      throw new Error('Quantity must be at least 1');
+    }
+    return true;
+  }),
 ];
 
 export const getCart = async (req: AuthRequest, res: Response) => {
@@ -73,6 +88,8 @@ export const getCartItemById = async (req: AuthRequest, res: Response) => {
 
 export const addToCart = async (req: AuthRequest, res: Response) => {
   try {
+    // Support both flat and nested 'data' payloads
+    const body = req.body.data ? req.body.data : req.body;
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -81,7 +98,7 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const { product_id, quantity, size, color } = req.body;
+    const { product_id, quantity, size, color } = body;
 
     // Check if product exists and has enough stock
     const [products] = await pool.query<RowDataPacket[]>(

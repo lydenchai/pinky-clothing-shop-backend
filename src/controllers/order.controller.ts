@@ -3,8 +3,7 @@ import { pool } from "../config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { body, validationResult } from "express-validator";
 import { AuthRequest } from "../middleware/auth.middleware";
-
-// ...existing imports...
+import { generateObjectId } from "./auth.controller";
 
 /* ----------------------------- VALIDATION ----------------------------- */
 export const orderValidation = [
@@ -25,57 +24,59 @@ export const orderValidation = [
     return true;
   }),
 ];
+
 // Get all orders for admin
 export const getAllOrders = async (req: AuthRequest, res: Response) => {
   try {
-    const page = parseInt((req.query.page as string) || "1", 10) || 1;
-    const limit = parseInt((req.query.limit as string) || "15", 10) || 15;
+    const page = parseInt((req.query.page as string) || "1", 10);
+    const limit = parseInt((req.query.limit as string) || "15", 10);
     const offset = (page - 1) * limit;
 
-    // total orders
+    // Total orders
     const [countRows] = await pool.query<RowDataPacket[]>(
       "SELECT COUNT(*) as total FROM orders"
     );
-    const total =
-      Array.isArray(countRows) && (countRows as any)[0]
-        ? (countRows as any)[0].total
-        : 0;
+    const total = (countRows[0] as any)?.total || 0;
 
+    // Fetch orders with items and user info
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT o._id AS order_id, o.*, oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
+      `SELECT o._id AS order_id, o.*, 
+              oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
               p.name AS product_name, p.image AS product_image,
-              u.email AS userEmail, u.first_name AS userfirst_name, u.last_name AS userlast_name
-         FROM orders o
-         LEFT JOIN order_items oi ON o._id = oi.order_id
-         LEFT JOIN products p ON oi.product_id = p._id
-         LEFT JOIN users u ON o.user_id = u._id
-         ORDER BY o.updated_at DESC, o._id DESC
-         LIMIT ? OFFSET ?`,
+              u.email AS user_email, u.first_name AS user_first_name, u.last_name AS user_last_name
+       FROM orders o
+       LEFT JOIN order_items oi ON o._id = oi.order_id
+       LEFT JOIN products p ON oi.product_id = p._id
+       LEFT JOIN users u ON o.user_id = u._id
+       ORDER BY o.updated_at DESC, o._id DESC
+       LIMIT ? OFFSET ?`,
       [limit, offset]
     );
-    const map: any = {};
+
+    const map: Record<string, any> = {};
     rows.forEach((row) => {
       if (!map[row.order_id]) {
         map[row.order_id] = {
-          id: row.order_id,
+          _id: row.order_id,
           user_id: row.user_id,
-          userEmail: row.userEmail,
-          userfirst_name: row.userfirst_name,
-          userlast_name: row.userlast_name,
+          user_email: row.user_email,
+          user_first_name: row.user_first_name,
+          user_last_name: row.user_last_name,
           total_amount: row.total_amount,
           status: row.status,
-          shippingAddress: row.shippingAddress,
-          shippingCity: row.shippingCity,
-          shippingpostal_code: row.shippingpostal_code,
-          shippingCountry: row.shippingCountry,
+          shipping_address: row.shipping_address,
+          shipping_city: row.shipping_city,
+          shipping_postal_code: row.shipping_postal_code,
+          shipping_country: row.shipping_country,
           created_at: row.created_at,
           updated_at: row.updated_at,
           items: [],
         };
       }
+
       if (row.item_id) {
         map[row.order_id].items.push({
-          id: row.item_id,
+          _id: row.item_id,
           product_id: row.product_id,
           quantity: row.quantity,
           price: row.price,
@@ -99,84 +100,92 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error("getAllOrders error:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    res.status(500).json({ success: false, error: "Internal Server Error" });
   }
 };
 
 /* ----------------------------- CREATE ORDER --------------------------- */
 export const createOrder = async (req: AuthRequest, res: Response) => {
   const connection = await pool.getConnection();
+  let transactionStarted = false;
+
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
-    let shipping_address = "",
-      shipping_city = "",
-      shipping_postal_code = "",
-      shipping_country = "";
-    if (req.body.address) {
-      const a = req.body.address;
-      shipping_address = `${a.house || ""} ${a.street || ""} ${
-        a.village || ""
-      } ${a.commune || ""} ${a.district || ""} ${a.province || ""}`.trim();
-      shipping_city = a.province || "";
-      shipping_postal_code = a.postal_code || "";
-      shipping_country = a.country || "Cambodia";
-    } else {
-      shipping_address = req.body.shipping_address;
-      shipping_city = req.body.shipping_city;
-      shipping_postal_code = req.body.shipping_postal_code;
-      shipping_country = req.body.shipping_country;
-    }
-    await connection.beginTransaction();
 
-    // Get cart items
+    /* ---------- SHIPPING ADDRESS ---------- */
+    const a = req.body.address || {};
+    const shipping_address = req.body.address
+      ? `${a.house || ""} ${a.street || ""} ${a.village || ""} ${
+          a.commune || ""
+        } ${a.district || ""} ${a.province || ""}`.trim()
+      : req.body.shipping_address || "";
+
+    const shipping_city = a.province || req.body.shipping_city || "";
+    const shipping_postal_code =
+      a.postal_code || req.body.shipping_postal_code || "";
+    const shipping_country =
+      a.country || req.body.shipping_country || "Cambodia";
+
+    // Generate _id for order
+    const order_id = req.body._id || generateObjectId();
+
+    await connection.beginTransaction();
+    transactionStarted = true;
+
+    /* ---------- GET CART ITEMS (LOCK ROWS) ---------- */
     const [cart_items] = await connection.query<RowDataPacket[]>(
-      `SELECT ci.product_id, ci.quantity, ci.size, ci.color, p.price, p.stock
+      `SELECT ci.product_id, ci.quantity, ci.size, ci.color,
+              p.price, p.stock
        FROM cart_items ci
        JOIN products p ON ci.product_id = p._id
-       WHERE ci.user_id = ?`,
+       WHERE ci.user_id = ?
+       FOR UPDATE`,
       [req.user_id]
     );
-    if (cart_items.length === 0) {
-      await connection.rollback();
-      return res.status(400).json({ error: "Cart is empty" });
+
+    if (!cart_items.length) {
+      throw new Error("Cart is empty");
     }
 
-    // Calculate total & validate stock
+    /* ---------- VALIDATE STOCK & TOTAL ---------- */
     let total_amount = 0;
     for (const item of cart_items) {
       if (item.stock < item.quantity) {
-        await connection.rollback();
-        return res.status(400).json({
-          error: `Insufficient stock for product ID ${item.product_id}`,
-        });
+        throw new Error(`Insufficient stock for product ${item.product_id}`);
       }
       total_amount += item.price * item.quantity;
     }
 
-    // Create order
-    const [orderResult] = await connection.query<ResultSetHeader>(
-      `INSERT INTO orders (user_id, total_amount, status, shipping_address, shipping_city, shipping_postal_code, shipping_country)
-       VALUES (?, ?, 'pending', ?, ?, ?, ?)`,
-      [
-        req.user_id,
-        total_amount,
-        shipping_address,
-        shipping_city,
-        shipping_postal_code,
-        shipping_country,
-      ]
+    /* ---------- CREATE ORDER ---------- */
+    const orderValues = [
+      order_id,
+      req.user_id,
+      total_amount,
+      shipping_address,
+      shipping_city,
+      shipping_postal_code,
+      shipping_country,
+    ];
+    await connection.query(
+      `INSERT INTO orders
+       (_id, user_id, total_amount, status, shipping_address, shipping_city, shipping_postal_code, shipping_country)
+       VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)`,
+      orderValues
     );
-    const order_id = orderResult.insert_id;
 
-    // Insert items + update stock
+    /* ---------- INSERT ITEMS + UPDATE STOCK ---------- */
     for (const item of cart_items) {
+      const orderItemId = generateObjectId(); // <-- FIX: generate _id for order_items
+
       await connection.query(
-        `INSERT INTO order_items (order_id, product_id, quantity, price, size, color)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO order_items
+         (_id, order_id, product_id, quantity, price, size, color)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
+          orderItemId,
           order_id,
           item.product_id,
           item.quantity,
@@ -185,32 +194,35 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           item.color || null,
         ]
       );
+
       await connection.query(
-        "UPDATE products SET stock = stock - ? WHERE _id = ?",
+        `UPDATE products
+         SET stock = stock - ?
+         WHERE _id = ?`,
         [item.quantity, item.product_id]
       );
     }
 
-    // Clear cart
-    await connection.query("DELETE FROM cart_items WHERE user_id = ?", [
+    /* ---------- CLEAR CART ---------- */
+    await connection.query(`DELETE FROM cart_items WHERE user_id = ?`, [
       req.user_id,
     ]);
+
     await connection.commit();
 
-    // Fetch order with items
+    /* ---------- FETCH ORDER ---------- */
     const [rows] = await connection.query<RowDataPacket[]>(
-      `SELECT o._id AS order_id, o.*, oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
+      `SELECT o.*, oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
               p.name AS product_name, p.image AS product_image
-         FROM orders o
-         LEFT JOIN order_items oi ON o._id = oi.order_id
-         LEFT JOIN products p ON oi.product_id = p._id
-         WHERE o._id = ?`,
+       FROM orders o
+       LEFT JOIN order_items oi ON o._id = oi.order_id
+       LEFT JOIN products p ON oi.product_id = p._id
+       WHERE o._id = ?`,
       [order_id]
     );
-    if (!rows.length) return res.status(404).json({ error: "Order not found" });
 
-    const order: any = {
-      id: rows[0].order_id,
+    const order = {
+      _id: rows[0]._id,
       user_id: rows[0].user_id,
       total_amount: rows[0].total_amount,
       status: rows[0].status,
@@ -219,34 +231,35 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       shipping_postal_code: rows[0].shipping_postal_code,
       shipping_country: rows[0].shipping_country,
       created_at: rows[0].created_at,
-      updated_at: rows[0].updated_at,
-      items: [],
+      items: rows
+        .filter((r) => r.item_id)
+        .map((r) => ({
+          _id: r.item_id,
+          product_id: r.product_id,
+          quantity: r.quantity,
+          price: r.price,
+          size: r.size,
+          color: r.color,
+          product_name: r.product_name,
+          product_image: r.product_image,
+        })),
     };
-    rows.forEach((row) => {
-      if (row.item_id) {
-        order.items.push({
-          id: row.item_id,
-          product_id: row.product_id,
-          quantity: row.quantity,
-          price: row.price,
-          size: row.size,
-          color: row.color,
-          product_name: row.product_name,
-          product_image: row.product_image,
-        });
-      }
-    });
+
     res.status(201).json({ data: order, success: true });
-  } catch (error) {
-    await connection.rollback();
-    console.error("createOrder error:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+  } catch (error: any) {
+    if (transactionStarted) await connection.rollback();
+
+    console.error("createOrder error:", error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Internal Server Error",
+    });
   } finally {
     connection.release();
   }
 };
 
-/* ------------------------------ GET ORDERS ---------------------------- */
+/* ---------------------------- GET ORDERS ---------------------------- */
 export const getOrders = async (req: AuthRequest, res: Response) => {
   try {
     // Check if user is admin
@@ -255,23 +268,30 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
       [req.user_id]
     );
     const isAdmin = userRows.length && userRows[0].role === "admin";
-    let query = `SELECT o._id AS order_id, o.*, oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS product_name, p.image AS product_image
-         FROM orders o
-         LEFT JOIN order_items oi ON o._id = oi.order_id
-         LEFT JOIN products p ON oi.product_id = p._id`;
+
+    // Base query
+    let query = `SELECT o._id AS order_id, o.*, 
+                        oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
+                        p.name AS product_name, p.image AS product_image,
+                        u.email AS user_email, u.first_name AS user_first_name, u.last_name AS user_last_name
+                 FROM orders o
+                 LEFT JOIN order_items oi ON o._id = oi.order_id
+                 LEFT JOIN products p ON oi.product_id = p._id
+                 LEFT JOIN users u ON o.user_id = u._id`;
     let params: any[] = [];
+
     if (!isAdmin) {
       query += " WHERE o.user_id = ?";
       params.push(req.user_id);
     }
-    // pagination
-    const page = parseInt((req.query.page as string) || "1", 10) || 1;
-    const limit = parseInt((req.query.limit as string) || "15", 10) || 15;
+
+    // Pagination
+    const page = parseInt((req.query.page as string) || "1", 10);
+    const limit = parseInt((req.query.limit as string) || "15", 10);
     const offset = (page - 1) * limit;
 
-    // count total with same filter
-    let countQuery = "SELECT COUNT(DISTINCT o._id) as total FROM orders o";
+    // Count total with same filter
+    let countQuery = "SELECT COUNT(DISTINCT o._id) AS total FROM orders o";
     const countParams: any[] = [];
     if (!isAdmin) {
       countQuery += " WHERE o.user_id = ?";
@@ -281,20 +301,26 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
       countQuery,
       countParams
     );
-    const total =
-      Array.isArray(countRows) && (countRows as any)[0]
-        ? (countRows as any)[0].total
-        : 0;
+    const total = (countRows[0] as any)?.total || 0;
 
     query += " ORDER BY o.updated_at DESC, o._id DESC LIMIT ? OFFSET ?";
     params.push(limit, offset);
+
     const [rows] = await pool.query<RowDataPacket[]>(query, params);
-    const map: any = {};
+
+    // Map orders
+    const map: Record<string, any> = {};
     rows.forEach((row) => {
       if (!map[row.order_id]) {
         map[row.order_id] = {
-          id: row.order_id,
-          user_id: row.user_id,
+          _id: row.order_id,
+          user: {
+            // populate customer object
+            _id: row.user_id,
+            email: row.user_email,
+            first_name: row.user_first_name,
+            last_name: row.user_last_name,
+          },
           total_amount: row.total_amount,
           status: row.status,
           shipping_address: row.shipping_address,
@@ -306,9 +332,10 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
           items: [],
         };
       }
+
       if (row.item_id) {
         map[row.order_id].items.push({
-          id: row.item_id,
+          _id: row.item_id,
           product_id: row.product_id,
           quantity: row.quantity,
           price: row.price,
@@ -332,37 +359,53 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error("getOrders error:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    res.status(500).json({ success: false, error: "Internal Server Error" });
   }
 };
 
 /* ---------------------------- GET ORDER BY ID ------------------------- */
 export const getOrderById = async (req: AuthRequest, res: Response) => {
   try {
-    const { _id } = req.params;
+    const { id } = req.params;
+
     // Check if user is admin
     const [userRows] = await pool.query<RowDataPacket[]>(
       "SELECT role FROM users WHERE _id = ?",
       [req.user_id]
     );
     const isAdmin = userRows.length && userRows[0].role === "admin";
-    let query = `SELECT o._id AS order_id, o.*, oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS product_name, p.image AS product_image
-         FROM orders o
-         LEFT JOIN order_items oi ON o._id = oi.order_id
-         LEFT JOIN products p ON oi.product_id = p._id
-         WHERE o._id = ?`;
-    let params: any[] = [_id];
+
+    // Base query
+    let query = `SELECT o._id AS order_id, o.*, 
+                        oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
+                        p.name AS product_name, p.image AS product_image,
+                        u.email AS user_email, u.first_name AS user_first_name, u.last_name AS user_last_name
+                 FROM orders o
+                 LEFT JOIN order_items oi ON o._id = oi.order_id
+                 LEFT JOIN products p ON oi.product_id = p._id
+                 LEFT JOIN users u ON o.user_id = u._id
+                 WHERE o._id = ?`;
+    const params: any[] = [id];
+
     if (!isAdmin) {
       query += " AND o.user_id = ?";
       params.push(req.user_id);
     }
-    const [rows] = await pool.query<RowDataPacket[]>(query, params);
-    if (!rows.length) return res.status(404).json({ error: "Order not found" });
 
-    const order: any = {
+    const [rows] = await pool.query<RowDataPacket[]>(query, params);
+
+    if (!rows.length) {
+      return res.status(404).json({ success: false, error: "Order not found" });
+    }
+
+    const order = {
       _id: rows[0].order_id,
-      user_id: rows[0].user_id,
+      user: {
+        _id: rows[0].user_id,
+        email: rows[0].user_email,
+        first_name: rows[0].user_first_name,
+        last_name: rows[0].user_last_name,
+      },
       total_amount: rows[0].total_amount,
       status: rows[0].status,
       shipping_address: rows[0].shipping_address,
@@ -371,8 +414,9 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
       shipping_country: rows[0].shipping_country,
       created_at: rows[0].created_at,
       updated_at: rows[0].updated_at,
-      items: [],
+      items: [] as any[],
     };
+
     rows.forEach((row) => {
       if (row.item_id) {
         order.items.push({
@@ -387,17 +431,18 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
         });
       }
     });
-    res.json({ data: order, success: true });
+
+    res.json({ success: true, data: order });
   } catch (error) {
     console.error("getOrderById error:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    res.status(500).json({ success: false, error: "Internal Server Error" });
   }
 };
 
 /* --------------------------- UPDATE ORDER STATUS ---------------------- */
 export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
   try {
-    const { _id } = req.params;
+    const { id } = req.params;
     const { status } = req.body;
     const valid = [
       "pending",
@@ -420,10 +465,10 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     let params: any[];
     if (isAdmin) {
       query = `UPDATE orders SET status = ?, updated_at = NOW() WHERE _id = ?`;
-      params = [status, _id];
+      params = [status, id];
     } else {
       query = `UPDATE orders SET status = ?, updated_at = NOW() WHERE _id = ? AND user_id = ?`;
-      params = [status, _id, req.user_id];
+      params = [status, id, req.user_id];
     }
 
     const [result] = await pool.query<ResultSetHeader>(query, params);
@@ -440,7 +485,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
          LEFT JOIN order_items oi ON o._id = oi.order_id
          LEFT JOIN products p ON oi.product_id = p._id
          WHERE o._id = ?`,
-      [_id]
+      [id]
     );
     if (!rows.length) return res.status(404).json({ error: "Order not found" });
     const order: any = {
@@ -459,7 +504,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     rows.forEach((row) => {
       if (row.item_id) {
         order.items.push({
-          id: row.item_id,
+          _id: row.item_id,
           product_id: row.product_id,
           quantity: row.quantity,
           price: row.price,

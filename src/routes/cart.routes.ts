@@ -8,10 +8,16 @@ const router = Router();
 router.use(authenticate);
 
 router.get("/", cartController.getCart);
-router.post("/add", cartController.cartItemValidation, cartController.addToCart);
+router.post(
+  "/add",
+  cartController.cartItemValidation,
+  cartController.addToCart
+);
 router.get("/find/:id", cartController.getCartItemById);
 router.patch("/update/:id", cartController.updateCartItem);
 router.delete("/delete/:id", cartController.removeFromCart);
 router.delete("/clear", cartController.clearCart);
+// Alias: allow DELETE /api/cart to also clear the cart
+router.delete("/", cartController.clearCart);
 
 export default router;

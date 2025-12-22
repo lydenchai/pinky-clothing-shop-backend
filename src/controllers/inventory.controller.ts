@@ -1,31 +1,26 @@
 import { Request, Response } from "express";
 import { pool } from "../config/database";
-import crypto from "crypto";
-
-function generateObjectId(): string {
-  const timestamp = Math.floor(Date.now() / 1000).toString(16);
-  const random = crypto.randomBytes(8).toString("hex");
-  return timestamp + random;
-}
+import { generateObjectId } from "./auth.controller";
 
 export const getAllInventory = async (req: Request, res: Response) => {
   try {
-    const page = parseInt((req.query.page as string) || "1", 10) || 1;
-    const limit = parseInt((req.query.limit as string) || "15", 10) || 15;
+    const page = parseInt((req.query.page as string) || "1", 10);
+    const limit = parseInt((req.query.limit as string) || "15", 10);
     const offset = (page - 1) * limit;
 
-    // total count
+    // Total count
     const [countRows] = await pool.query(
       "SELECT COUNT(*) as total FROM inventory"
     );
+
     const total =
       Array.isArray(countRows) && (countRows as any)[0]
         ? (countRows as any)[0].total
         : 0;
 
-    // paginated rows with product name populated
+    // Paginated rows with product info populated
     const [rows] = await pool.query(
-      `SELECT inventory.*, products.name as product_name
+      `SELECT inventory.*, products._id AS product_id, products.name AS product_name
        FROM inventory
        LEFT JOIN products ON inventory.product_id = products._id
        ORDER BY inventory.updated_at DESC, inventory._id DESC
@@ -33,9 +28,21 @@ export const getAllInventory = async (req: Request, res: Response) => {
       [limit, offset]
     );
 
+    // Map rows to include product object
+    const data = (rows as any[]).map((row) => ({
+      _id: row._id,
+      quantity: row.quantity,
+      location: row.location,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      product: row.product_id
+        ? { _id: row.product_id, name: row.product_name }
+        : null,
+    }));
+
     res.json({
       success: true,
-      data: Array.isArray(rows) ? rows : [],
+      data,
       pagination: {
         page,
         limit,
@@ -44,23 +51,54 @@ export const getAllInventory = async (req: Request, res: Response) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ message: "Failed to fetch inventory", error: err });
+    console.error("getAllInventory error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch inventory",
+      error: err,
+    });
   }
 };
 
+import { RowDataPacket } from "mysql2";
+
 export const getInventoryById = async (req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query("SELECT * FROM inventory WHERE _id = ?", [
-      req.params.id,
-    ]);
-    const item = Array.isArray(rows) ? rows[0] : null;
-    if (!item)
-      return res.status(404).json({ message: "Inventory item not found" });
-    res.json({ data: item, success: true });
+    // Tell TypeScript the query returns RowDataPacket[]
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT inventory.*, products._id AS product_id, products.name AS product_name
+       FROM inventory
+       LEFT JOIN products ON inventory.product_id = products._id
+       WHERE inventory._id = ?`,
+      [req.params.id]
+    );
+
+    const item = rows[0];
+    if (!item) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Inventory item not found" });
+    }
+
+    const inventoryItem = {
+      _id: item._id,
+      quantity: item.quantity,
+      location: item.location,
+      created_at: item.created_at,
+      updated_at: item.updated_at,
+      product: item.product_id
+        ? { _id: item.product_id, name: item.product_name }
+        : null,
+    };
+
+    res.json({ success: true, data: inventoryItem });
   } catch (err) {
-    res
-      .status(500)
-      .json({ message: "Failed to fetch inventory item", error: err });
+    console.error("getInventoryById error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch inventory item",
+      error: err,
+    });
   }
 };
 

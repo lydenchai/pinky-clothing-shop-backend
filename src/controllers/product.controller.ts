@@ -3,6 +3,7 @@ import { pool } from "../config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { body, validationResult } from "express-validator";
 import { AuthRequest } from "../middleware/auth.middleware";
+import { generateObjectId } from "./auth.controller";
 
 export const productValidation = [
   body("name").notEmpty().withMessage("Product name is required"),

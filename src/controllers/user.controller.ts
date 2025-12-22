@@ -208,11 +208,11 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
 
 export const deleteUser = async (req: AuthRequest, res: Response) => {
   try {
-    const { _id } = req.params;
+    const { id } = req.params;
 
     const [result] = await pool.query<ResultSetHeader>(
       "DELETE FROM users WHERE _id = ?",
-      [_id]
+      [id]
     );
 
     if (result.affectedRows === 0) {
@@ -226,14 +226,14 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
 
 export const updateUserRole = async (req: AuthRequest, res: Response) => {
   try {
-    const { _id } = req.params;
+    const { id } = req.params;
     const { role } = req.body;
     if (!["admin", "customer"].includes(role)) {
       return res.status(400).json({ data: null, message: "Invalid role" });
     }
     const [result] = await pool.query<ResultSetHeader>(
       "UPDATE users SET role = ? WHERE _id = ?",
-      [role, _id]
+      [role, id]
     );
     if (result.affectedRows === 0) {
       return res.status(404).json({ data: null, message: "User not found" });

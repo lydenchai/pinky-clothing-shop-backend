@@ -3,19 +3,13 @@ import { pool } from "../config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { body, validationResult } from "express-validator";
 import { AuthRequest } from "../middleware/auth.middleware";
-import crypto from "crypto";
-
-function generateObjectId(): string {
-  const timestamp = Math.floor(Date.now() / 1000).toString(16);
-  const random = crypto.randomBytes(8).toString("hex");
-  return timestamp + random;
-}
+import { generateObjectId } from "./auth.controller";
 
 export const cartItemValidation = [
   body("product_id")
     .isString()
-    .matches(/^[a-fA-F0-9]{24}$/)
-    .withMessage("Valid product ID is required (24-char hex string)"),
+    .isLength({ min: 36, max: 36 })
+    .withMessage("Valid product ID is required (36-char UUID)"),
   body("quantity").isInt({ min: 1 }).withMessage("Quantity must be at least 1"),
 ];
 
@@ -33,7 +27,10 @@ export const getCart = async (req: AuthRequest, res: Response) => {
     );
 
     // Calculate cart summary
-    const subtotal = items.reduce((sum, item) => sum + (item.product_price ?? 0) * item.quantity, 0);
+    const subtotal = items.reduce(
+      (sum, item) => sum + (item.product_price ?? 0) * item.quantity,
+      0
+    );
     const shipping = subtotal > 0 ? (subtotal > 100 ? 0 : 10) : 0;
     const tax = subtotal * 0.08;
     const total = subtotal + shipping + tax;
@@ -55,7 +52,7 @@ export const getCart = async (req: AuthRequest, res: Response) => {
 
 export const getCartItemById = async (req: AuthRequest, res: Response) => {
   try {
-    const { _id } = req.params;
+    const { id } = req.params;
     const [items] = await pool.query<RowDataPacket[]>(
       `SELECT 
         ci._id, ci.user_id, ci.product_id, ci.quantity, ci.size, ci.color, ci.created_at,
@@ -63,7 +60,7 @@ export const getCartItemById = async (req: AuthRequest, res: Response) => {
        FROM cart_items ci
        JOIN products p ON ci.product_id = p._id
        WHERE ci._id = ?`,
-      [_id]
+      [id]
     );
     if (items.length === 0) {
       return res.status(404).json({ error: "Cart item not found" });
@@ -152,7 +149,10 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
        ORDER BY ci.created_at DESC`,
       [req.user_id]
     );
-    const subtotal = cartItems.reduce((sum, item) => sum + (item.product_price ?? 0) * item.quantity, 0);
+    const subtotal = cartItems.reduce(
+      (sum, item) => sum + (item.product_price ?? 0) * item.quantity,
+      0
+    );
     const shipping = subtotal > 0 ? (subtotal > 100 ? 0 : 10) : 0;
     const tax = subtotal * 0.08;
     const total = subtotal + shipping + tax;
@@ -178,10 +178,9 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
 
 export const updateCartItem = async (req: AuthRequest, res: Response) => {
   try {
-
     const { id } = req.params;
     const { quantity } = req.body;
-    if (!id || typeof id !== 'string' || !/^[a-fA-F0-9]{24}$/.test(id)) {
+    if (!id || typeof id !== "string" || !/^[a-fA-F0-9]{24}$/.test(id)) {
       return res.status(400).json({ error: "Invalid cart item ID" });
     }
     if (quantity < 1) {
@@ -215,7 +214,10 @@ export const updateCartItem = async (req: AuthRequest, res: Response) => {
        ORDER BY ci.created_at DESC`,
       [req.user_id]
     );
-    const subtotal = allCartItems.reduce((sum, item) => sum + (item.product_price ?? 0) * item.quantity, 0);
+    const subtotal = allCartItems.reduce(
+      (sum, item) => sum + (item.product_price ?? 0) * item.quantity,
+      0
+    );
     const shipping = subtotal > 0 ? (subtotal > 100 ? 0 : 10) : 0;
     const tax = subtotal * 0.08;
     const total = subtotal + shipping + tax;
@@ -237,9 +239,8 @@ export const updateCartItem = async (req: AuthRequest, res: Response) => {
 
 export const removeFromCart = async (req: AuthRequest, res: Response) => {
   try {
-
     const { id } = req.params;
-    if (!id || typeof id !== 'string' || !/^[a-fA-F0-9]{24}$/.test(id)) {
+    if (!id || typeof id !== "string" || !/^[a-fA-F0-9]{24}$/.test(id)) {
       return res.status(400).json({ error: "Invalid cart item ID" });
     }
     // First check if the cart item exists
@@ -269,7 +270,10 @@ export const removeFromCart = async (req: AuthRequest, res: Response) => {
        ORDER BY ci.created_at DESC`,
       [req.user_id]
     );
-    const subtotal = allCartItems.reduce((sum, item) => sum + (item.product_price ?? 0) * item.quantity, 0);
+    const subtotal = allCartItems.reduce(
+      (sum, item) => sum + (item.product_price ?? 0) * item.quantity,
+      0
+    );
     const shipping = subtotal > 0 ? (subtotal > 100 ? 0 : 10) : 0;
     const tax = subtotal * 0.08;
     const total = subtotal + shipping + tax;

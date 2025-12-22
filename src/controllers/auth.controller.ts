@@ -160,7 +160,7 @@ export const login = async (req: Request, res: Response) => {
 };
 
 export const logout = async (req: AuthRequest, res: Response) => {
-  res.json({ success: true, message: "Logged out successfully" });
+  res.json({ success: true, message: "success" });
 };
 
 export const getProfile = async (req: AuthRequest, res: Response) => {

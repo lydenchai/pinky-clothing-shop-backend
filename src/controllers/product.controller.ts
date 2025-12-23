@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { v4 as uuidv4 } from "uuid";
 import { pool } from "../config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { body, validationResult } from "express-validator";
@@ -12,7 +13,7 @@ export const productValidation = [
     .isFloat({ min: 0 })
     .withMessage("Price must be a positive number"),
   body("category").notEmpty().withMessage("Category is required"),
-  body("image").notEmpty().withMessage("Image URL is required"),
+  // body("image").notEmpty().withMessage("Image URL is required"),
   body("stock")
     .isInt({ min: 0 })
     .withMessage("Stock must be a non-negative integer"),
@@ -109,30 +110,46 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
     const { name, description, price, category, image, stock, sizes, colors } =
       req.body;
     // Generate a UUID for _id
-    const { v4: uuidv4 } = require("uuid");
-    const _id = uuidv4();
-    await pool.query<ResultSetHeader>(
-      `INSERT INTO products (_id, name, description, price, category, image, stock, sizes, colors)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        _id,
-        name,
-        description,
-        price,
-        category,
-        image,
-        stock || 0,
-        sizes || null,
-        colors || null,
-      ]
-    );
-    const [products] = await pool.query<RowDataPacket[]>(
-      "SELECT * FROM products WHERE _id = ?",
-      [_id]
-    );
-    res.status(201).json({ data: products[0], success: true });
+    // Use ESM import for uuid
+    // import { v4 as uuidv4 } from 'uuid'; (top of file)
+    const _id = req.body._id || generateObjectId();
+    try {
+      await pool.query<ResultSetHeader>(
+        `INSERT INTO products (_id, name, description, price, category, image, stock, sizes, colors)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          _id,
+          name,
+          description,
+          price,
+          category,
+          image,
+          stock || 0,
+          sizes || null,
+          colors || null,
+        ]
+      );
+    } catch (dbError) {
+      console.error("DB Insert Error:", dbError);
+      return res
+        .status(500)
+        .json({ error: "Database Error", details: dbError });
+    }
+    try {
+      const [products] = await pool.query<RowDataPacket[]>(
+        "SELECT * FROM products WHERE _id = ?",
+        [_id]
+      );
+      res.status(201).json({ data: products[0], success: true });
+    } catch (dbError) {
+      console.error("DB Select Error:", dbError);
+      return res
+        .status(500)
+        .json({ error: "Database Error", details: dbError });
+    }
   } catch (error) {
-    res.status(500).json({ error: "Internal Server Error" });
+    console.error("Create Product Error:", error);
+    res.status(500).json({ error: "Internal Server Error", details: error });
   }
 };
 

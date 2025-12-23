@@ -53,7 +53,7 @@ export const initializeDatabase = async () => {
         description TEXT,
         price DECIMAL(10,2) NOT NULL,
         category VARCHAR(100) NOT NULL,
-        image TEXT,
+        image LONGTEXT,
         stock INT DEFAULT 0,
         sizes VARCHAR(255),
         colors VARCHAR(255),

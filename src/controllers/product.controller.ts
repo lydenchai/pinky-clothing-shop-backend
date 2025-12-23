@@ -156,8 +156,11 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
 export const updateProduct = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    let { name, description, price, category, image, stock, sizes, colors } =
-      req.body;
+    let { name, description, price, category, image, stock, sizes, colors } = req.body;
+    // If a file was uploaded, use its path for image
+    if (req.file) {
+      image = req.file.path;
+    }
     // Convert arrays to comma-separated strings if needed
     if (Array.isArray(sizes)) {
       sizes = sizes.join(",");

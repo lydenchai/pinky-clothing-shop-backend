@@ -6,7 +6,8 @@ import { generateObjectId } from "./auth.controller";
 
 export const getAllUsers = async (req: AuthRequest, res: Response) => {
   try {
-    const { page, limit, search } = req.query;
+    let { page, limit, search, q } = req.query;
+    if (!search && q) search = q;
 
     // Pagination parameters
     const currentPage = parseInt(page as string) || 1;

@@ -4,28 +4,43 @@ import { generateObjectId } from "./auth.controller";
 
 export const getAllInventory = async (req: Request, res: Response) => {
   try {
-    const page = parseInt((req.query.page as string) || "1", 10);
-    const limit = parseInt((req.query.limit as string) || "15", 10);
-    const offset = (page - 1) * limit;
+    let { page, limit, search, q } = req.query;
+    if (!search && q) search = q;
+
+    // Pagination parameters
+    const currentPage = parseInt(page as string) || 1;
+    const itemsPerPage = parseInt(limit as string) || 15;
+    const offset = (currentPage - 1) * itemsPerPage;
+
+    // Add search filter if present
+    let searchClause = "";
+    let searchParams: any[] = [];
+    if (search) {
+      searchClause =
+        " WHERE (inventory._id LIKE ? OR products.name LIKE ? OR inventory.location LIKE ?)";
+      const s = `%${search}%`;
+      searchParams = [s, s, s];
+    }
 
     // Total count
     const [countRows] = await pool.query(
-      "SELECT COUNT(*) as total FROM inventory"
+      `SELECT COUNT(*) as total FROM inventory LEFT JOIN products ON inventory.product_id = products._id${searchClause}`,
+      searchParams
     );
 
     const total =
       Array.isArray(countRows) && (countRows as any)[0]
         ? (countRows as any)[0].total
         : 0;
-
     // Paginated rows with product info populated
     const [rows] = await pool.query(
       `SELECT inventory.*, products._id AS product_id, products.name AS product_name
        FROM inventory
        LEFT JOIN products ON inventory.product_id = products._id
+       ${searchClause}
        ORDER BY inventory.updated_at DESC, inventory._id DESC
        LIMIT ? OFFSET ?`,
-      [limit, offset]
+      [...searchParams, Number(itemsPerPage), Number(offset)]
     );
 
     // Map rows to include product object
@@ -45,9 +60,9 @@ export const getAllInventory = async (req: Request, res: Response) => {
       data,
       pagination: {
         page,
-        limit,
+        limit: itemsPerPage,
         totalItems: total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: Math.ceil(total / itemsPerPage),
       },
     });
   } catch (err) {

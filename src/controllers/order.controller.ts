@@ -28,9 +28,13 @@ export const orderValidation = [
 // Get all orders for admin
 export const getAllOrders = async (req: AuthRequest, res: Response) => {
   try {
-    const page = parseInt((req.query.page as string) || "1", 10);
-    const limit = parseInt((req.query.limit as string) || "15", 10);
-    const offset = (page - 1) * limit;
+    let { page, limit, search, q } = req.query;
+    if (!search && q) search = q;
+
+    // Pagination parameters
+    const currentPage = parseInt(page as string) || 1;
+    const itemsPerPage = parseInt(limit as string) || 15;
+    const offset = (currentPage - 1) * itemsPerPage;
 
     // Total orders
     const [countRows] = await pool.query<RowDataPacket[]>(
@@ -93,9 +97,9 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
       data: Object.values(map),
       pagination: {
         page,
-        limit,
+        limit: itemsPerPage,
         totalItems: total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: Math.ceil(total / itemsPerPage),
       },
     });
   } catch (error) {

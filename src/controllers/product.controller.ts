@@ -1,5 +1,4 @@
 import { Request, Response } from "express";
-import { v4 as uuidv4 } from "uuid";
 import { pool } from "../config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { body, validationResult } from "express-validator";
@@ -21,8 +20,9 @@ export const productValidation = [
 
 export const getAllProducts = async (req: Request, res: Response) => {
   try {
-    const { category, minPrice, maxPrice, search, inStock, page, limit } =
+    let { category, minPrice, maxPrice, search, inStock, page, limit, q } =
       req.query;
+    if (!search && q) search = q;
 
     // Pagination parameters
     const currentPage = parseInt(page as string) || 1;

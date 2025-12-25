@@ -152,6 +152,25 @@ export const initializeDatabase = async () => {
         INDEX idx_user_id (user_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+
+    /* =======================
+       SHIPPING METHODS
+    ======================== */
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS shippings (
+        _id VARCHAR(36) NOT NULL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT NOT NULL,
+        price FLOAT NOT NULL,
+        min_order INT NOT NULL,
+        max_order INT NOT NULL,
+        country VARCHAR(100) NOT NULL,
+        estimated_days INT NOT NULL,
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
   } finally {
     connection.release();
   }

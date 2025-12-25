@@ -11,6 +11,7 @@ router.post(
   orderController.createOrder
 );
 router.get("/", orderController.getOrders);
+router.get("/user-orders", orderController.getUserOrders);
 router.get("/find/:id", orderController.getOrderById);
 router.patch("/update/:id/status", orderController.updateOrderStatus);
 router.post(

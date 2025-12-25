@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { pool } from "../config/database";
 import { generateObjectId } from "./auth.controller";
+import { RowDataPacket } from "mysql2";
 
 export const getAllInventory = async (req: Request, res: Response) => {
   try {
@@ -59,7 +60,7 @@ export const getAllInventory = async (req: Request, res: Response) => {
       success: true,
       data,
       pagination: {
-        page,
+        page: currentPage,
         limit: itemsPerPage,
         totalItems: total,
         totalPages: Math.ceil(total / itemsPerPage),
@@ -74,8 +75,6 @@ export const getAllInventory = async (req: Request, res: Response) => {
     });
   }
 };
-
-import { RowDataPacket } from "mysql2";
 
 export const getInventoryById = async (req: Request, res: Response) => {
   try {
@@ -188,7 +187,7 @@ export const updateInventory = async (req: Request, res: Response) => {
 export const deleteInventory = async (req: Request, res: Response) => {
   try {
     const [result] = await pool.query("DELETE FROM inventory WHERE _id = ?", [
-      req.params._id,
+      req.params.id,
     ]);
     if ((result as any).affectedRows === 0) {
       return res.status(404).json({ message: "Inventory item not found" });
@@ -207,7 +206,7 @@ export const adjustStock = async (req: Request, res: Response) => {
     // Get current quantity
     const [rows] = (await pool.query(
       "SELECT quantity FROM inventory WHERE _id = ?",
-      [req.params._id]
+      [req.params.id]
     )) as [import("mysql2").RowDataPacket[], any];
     const item = Array.isArray(rows) ? rows[0] : null;
     if (!item) {
@@ -216,11 +215,11 @@ export const adjustStock = async (req: Request, res: Response) => {
     const newQuantity = item.quantity + amount;
     await pool.query(
       "UPDATE inventory SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE _id = ?",
-      [newQuantity, req.params._id]
+      [newQuantity, req.params.id]
     );
     const [updatedRows] = await pool.query(
       "SELECT * FROM inventory WHERE _id = ?",
-      [req.params._id]
+      [req.params.id]
     );
     res.json({
       data: Array.isArray(updatedRows) ? updatedRows[0] : null,

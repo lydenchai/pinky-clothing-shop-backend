@@ -1,3 +1,86 @@
+// Get orders for current user (always filters by req.user_id, even for admin)
+export const getUserOrders = async (req: AuthRequest, res: Response) => {
+  try {
+    // Pagination
+    const page = parseInt((req.query.page as string) || "1", 10);
+    const limit = parseInt((req.query.limit as string) || "15", 10);
+    const offset = (page - 1) * limit;
+
+    // Count total
+    const [countRows] = await pool.query<RowDataPacket[]>(
+      "SELECT COUNT(DISTINCT o._id) AS total FROM orders o WHERE o.user_id = ?",
+      [req.user_id]
+    );
+    const total = (countRows[0] as any)?.total || 0;
+
+    // Orders query
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT o._id AS order_id, o.*, 
+              oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
+              p.name AS product_name, p.image AS product_image,
+              u.email AS user_email, u.first_name AS user_first_name, u.last_name AS user_last_name
+       FROM orders o
+       LEFT JOIN order_items oi ON o._id = oi.order_id
+       LEFT JOIN products p ON oi.product_id = p._id
+       LEFT JOIN users u ON o.user_id = u._id
+       WHERE o.user_id = ?
+       ORDER BY o.updated_at DESC, o._id DESC
+       LIMIT ? OFFSET ?`,
+      [req.user_id, limit, offset]
+    );
+
+    // Map orders
+    const map: Record<string, any> = {};
+    rows.forEach((row) => {
+      if (!map[row.order_id]) {
+        map[row.order_id] = {
+          _id: row.order_id,
+          user: {
+            _id: row.user_id,
+            email: row.user_email,
+            first_name: row.user_first_name,
+            last_name: row.user_last_name,
+          },
+          total_amount: row.total_amount,
+          status: row.status,
+          shipping_address: row.shipping_address,
+          shipping_city: row.shipping_city,
+          shipping_postal_code: row.shipping_postal_code,
+          shipping_country: row.shipping_country,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          items: [],
+        };
+      }
+      if (row.item_id) {
+        map[row.order_id].items.push({
+          _id: row.item_id,
+          product_id: row.product_id,
+          quantity: row.quantity,
+          price: row.price,
+          size: row.size,
+          color: row.color,
+          product_name: row.product_name,
+          product_image: row.product_image,
+        });
+      }
+    });
+
+    res.json({
+      success: true,
+      data: Object.values(map),
+      pagination: {
+        page: page,
+        limit: limit,
+        totalItems: total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("getUserOrders error:", error);
+    res.status(500).json({ success: false, error: "Internal Server Error" });
+  }
+};
 import { Response } from "express";
 import { pool } from "../config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
@@ -96,7 +179,7 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
       success: true,
       data: Object.values(map),
       pagination: {
-        page,
+        page: currentPage,
         limit: itemsPerPage,
         totalItems: total,
         totalPages: Math.ceil(total / itemsPerPage),
@@ -355,8 +438,8 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
       success: true,
       data: Object.values(map),
       pagination: {
-        page,
-        limit,
+        page: page,
+        limit: limit,
         totalItems: total,
         totalPages: Math.ceil(total / limit),
       },

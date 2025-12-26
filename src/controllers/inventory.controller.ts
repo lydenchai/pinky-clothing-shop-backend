@@ -1,3 +1,13 @@
+// Helper to generate random code (alphanumeric, 5-10 chars)
+function generateInventoryCode() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const codeLength = Math.floor(Math.random() * 6) + 5; // 5-10
+  let result = '';
+  for (let i = 0; i < codeLength; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 import { Request, Response } from "express";
 import { pool } from "../config/database";
 import { generateObjectId } from "./auth.controller";
@@ -118,12 +128,13 @@ export const getInventoryById = async (req: Request, res: Response) => {
 
 export const createInventory = async (req: Request, res: Response) => {
   try {
-    const { product_id, quantity, location } = req.body;
+    const { product_id, quantity, location, code } = req.body;
     // Generate _id if not provided
     const _id = req.body._id || generateObjectId();
+    const inventoryCode = code && code.trim() ? code.trim() : generateInventoryCode();
     const [result] = await pool.query(
-      "INSERT INTO inventory (_id, product_id, quantity, location) VALUES (?, ?, ?, ?)",
-      [_id, product_id, quantity, location]
+      "INSERT INTO inventory (_id, code, product_id, quantity, location) VALUES (?, ?, ?, ?, ?)",
+      [_id, inventoryCode, product_id, quantity, location]
     );
     const [rows] = await pool.query("SELECT * FROM inventory WHERE _id = ?", [
       _id,

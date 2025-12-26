@@ -1,3 +1,13 @@
+// Helper to generate random code (alphanumeric, 5-10 chars)
+function generateShippingCode() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const codeLength = Math.floor(Math.random() * 6) + 5; // 5-10
+  let result = '';
+  for (let i = 0; i < codeLength; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 import { Request, Response } from "express";
 import { pool } from "../config/database";
 import { generateObjectId } from "./auth.controller";
@@ -108,13 +118,16 @@ export const createShipping = async (req: Request, res: Response) => {
       max_order,
       estimated_days,
       active,
+      code
     } = req.body;
     // Generate _id if not provided
     const _id = req.body._id || generateObjectId();
+    const shippingCode = code && code.trim() ? code.trim() : generateShippingCode();
     const [result] = await pool.query(
-      "INSERT INTO shippings (_id, name, description, country, price, min_order, max_order, estimated_days, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO shippings (_id, code, name, description, country, price, min_order, max_order, estimated_days, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         _id,
+        shippingCode,
         name,
         description,
         country,

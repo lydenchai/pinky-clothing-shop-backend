@@ -1,3 +1,13 @@
+// Helper to generate random code (alphanumeric, 5-10 chars)
+function generateProductCode() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const codeLength = Math.floor(Math.random() * 6) + 5; // 5-10
+  let result = '';
+  for (let i = 0; i < codeLength; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 import { Request, Response } from "express";
 import { pool } from "../config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
@@ -107,18 +117,16 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { name, description, price, category, image, stock, sizes, colors } =
-      req.body;
-    // Generate a UUID for _id
-    // Use ESM import for uuid
-    // import { v4 as uuidv4 } from 'uuid'; (top of file)
+    const { name, description, price, category, image, stock, sizes, colors, code } = req.body;
     const _id = req.body._id || generateObjectId();
+    const productCode = code && code.trim() ? code.trim() : generateProductCode();
     try {
       await pool.query<ResultSetHeader>(
-        `INSERT INTO products (_id, name, description, price, category, image, stock, sizes, colors)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO products (_id, code, name, description, price, category, image, stock, sizes, colors)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           _id,
+          productCode,
           name,
           description,
           price,

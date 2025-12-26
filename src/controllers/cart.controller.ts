@@ -1,3 +1,13 @@
+// Helper to generate random code (alphanumeric, 5-10 chars)
+function generateCartCode() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const codeLength = Math.floor(Math.random() * 6) + 5; // 5-10
+  let result = '';
+  for (let i = 0; i < codeLength; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 import { Response } from "express";
 import { pool } from "../config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
@@ -153,9 +163,10 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
       ]);
     } else {
       const newId = generateObjectId();
+      const cartCode = body.code && body.code.trim() ? body.code.trim() : generateCartCode();
       await pool.query<ResultSetHeader>(
-        "INSERT INTO cart_items (_id, user_id, product_id, quantity, size, color) VALUES (?, ?, ?, ?, ?, ?)",
-        [newId, req.user_id, product_id, quantity, size || null, color || null]
+        "INSERT INTO cart_items (_id, code, user_id, product_id, quantity, size, color) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [newId, cartCode, req.user_id, product_id, quantity, size || null, color || null]
       );
     }
     // Always return the full updated cart as an object

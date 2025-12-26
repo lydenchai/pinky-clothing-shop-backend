@@ -49,6 +49,7 @@ export const initializeDatabase = async () => {
     await connection.query(`
       CREATE TABLE IF NOT EXISTS products (
         _id VARCHAR(36) NOT NULL PRIMARY KEY,
+        code VARCHAR(20) UNIQUE,
         name VARCHAR(255) NOT NULL,
         description TEXT,
         price DECIMAL(10,2) NOT NULL,
@@ -70,6 +71,7 @@ export const initializeDatabase = async () => {
     await connection.query(`
       CREATE TABLE IF NOT EXISTS cart_items (
         _id VARCHAR(36) NOT NULL PRIMARY KEY,
+        code VARCHAR(20),
         user_id VARCHAR(36) NOT NULL,
         product_id VARCHAR(36) NOT NULL,
         quantity INT NOT NULL DEFAULT 1,
@@ -90,6 +92,7 @@ export const initializeDatabase = async () => {
     await connection.query(`
       CREATE TABLE IF NOT EXISTS orders (
         _id VARCHAR(36) NOT NULL PRIMARY KEY,
+        code VARCHAR(20),
         user_id VARCHAR(36) NOT NULL,
         total_amount DECIMAL(10,2) NOT NULL,
         status ENUM('pending','processing','shipped','delivered','cancelled') DEFAULT 'pending',
@@ -104,7 +107,6 @@ export const initializeDatabase = async () => {
         INDEX idx_status (status)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
-
     /* =======================
        ORDER ITEMS
     ======================== */
@@ -129,6 +131,7 @@ export const initializeDatabase = async () => {
     await connection.query(`
       CREATE TABLE IF NOT EXISTS inventory (
         _id VARCHAR(36) NOT NULL PRIMARY KEY,
+        code VARCHAR(20),
         product_id VARCHAR(36) NOT NULL,
         quantity INT NOT NULL DEFAULT 0,
         location VARCHAR(255),
@@ -144,12 +147,19 @@ export const initializeDatabase = async () => {
     await connection.query(`
       CREATE TABLE IF NOT EXISTS analytics (
         _id VARCHAR(36) NOT NULL PRIMARY KEY,
-        type VARCHAR(100) NOT NULL,
-        user_id VARCHAR(36),
-        data TEXT,
+        code VARCHAR(20),
+        user_id VARCHAR(36) NOT NULL,
+        total_amount DECIMAL(10,2) NOT NULL,
+        status ENUM('pending','processing','shipped','delivered','cancelled') DEFAULT 'pending',
+        shipping_address TEXT NOT NULL,
+        shipping_city VARCHAR(100) NOT NULL,
+        shipping_postal_code VARCHAR(20) NOT NULL,
+        shipping_country VARCHAR(100) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_type (type),
-        INDEX idx_user_id (user_id)
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(_id) ON DELETE CASCADE,
+        INDEX idx_user_id (user_id),
+        INDEX idx_status (status)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
@@ -159,6 +169,7 @@ export const initializeDatabase = async () => {
     await connection.query(`
       CREATE TABLE IF NOT EXISTS shippings (
         _id VARCHAR(36) NOT NULL PRIMARY KEY,
+        code VARCHAR(20),
         name VARCHAR(255) NOT NULL,
         description TEXT NOT NULL,
         price FLOAT NOT NULL,
@@ -171,19 +182,49 @@ export const initializeDatabase = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+
+    /* =======================
+       WISHLIST
+    ======================== */
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS wishlist (
+        user_id VARCHAR(36) NOT NULL,
+        product_id VARCHAR(36) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, product_id),
+        FOREIGN KEY (user_id) REFERENCES users(_id) ON DELETE CASCADE,
+        FOREIGN KEY (product_id) REFERENCES products(_id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    
+    /* =======================
+       SITE INFO
+    ======================== */
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS site_info (
+        id INT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        contactEmail VARCHAR(255),
+        phone VARCHAR(50),
+        address VARCHAR(255),
+        logoUrl VARCHAR(255)
+      )
+    `);
   } finally {
     connection.release();
   }
 };
 
 if (require.main === module) {
-  initializeDatabase()
-    .then(() => {
+  (async () => {
+    try {
+      await initializeDatabase();
       console.log("Database initialized");
       process.exit(0);
-    })
-    .catch((err) => {
+    } catch (err) {
       console.error(err);
       process.exit(1);
-    });
+    }
+  })();
 }

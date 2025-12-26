@@ -14,8 +14,9 @@ import orderRoutes from "./routes/order.routes";
 import userRoutes from "./routes/user.routes";
 import inventoryRoutes from "./routes/inventory.routes";
 import analyticsRoutes from "./routes/analytics.routes";
-
+import siteInfoRoutes from "./routes/site-info.routes";
 import shippingRoutes from "./routes/shipping.routes";
+import wishlistRoutes from "./routes/wishlist.routes";
 
 const app = express();
 
@@ -42,8 +43,8 @@ app.use(
     exposedHeaders: ["Authorization"],
   })
 );
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Request logging middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -64,8 +65,9 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/analytics", analyticsRoutes);
-
+app.use("/api/site-info", siteInfoRoutes);
 app.use("/api/shippings", shippingRoutes);
+app.use("/api/wishlist", wishlistRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

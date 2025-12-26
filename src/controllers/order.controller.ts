@@ -1,3 +1,13 @@
+// Helper to generate random code (alphanumeric, 5-10 chars)
+function generateOrderCode() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const codeLength = Math.floor(Math.random() * 6) + 5; // 5-10
+  let result = '';
+  for (let i = 0; i < codeLength; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 // Get orders for current user (always filters by req.user_id, even for admin)
 export const getUserOrders = async (req: AuthRequest, res: Response) => {
   try {
@@ -218,6 +228,8 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 
     // Generate _id for order
     const order_id = req.body._id || generateObjectId();
+    // Generate or use provided code
+    const order_code = req.body.code && req.body.code.trim() ? req.body.code.trim() : generateOrderCode();
 
     await connection.beginTransaction();
     transactionStarted = true;
@@ -249,6 +261,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     /* ---------- CREATE ORDER ---------- */
     const orderValues = [
       order_id,
+      order_code,
       req.user_id,
       total_amount,
       shipping_address,
@@ -258,8 +271,8 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     ];
     await connection.query(
       `INSERT INTO orders
-       (_id, user_id, total_amount, status, shipping_address, shipping_city, shipping_postal_code, shipping_country)
-       VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)`,
+       (_id, code, user_id, total_amount, status, shipping_address, shipping_city, shipping_postal_code, shipping_country)
+       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
       orderValues
     );
 

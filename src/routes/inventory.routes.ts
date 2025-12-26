@@ -1,4 +1,5 @@
 import { Router } from "express";
+
 import {
   getAllInventory,
   getInventoryById,
@@ -7,14 +8,15 @@ import {
   deleteInventory,
   adjustStock,
 } from "../controllers/inventory.controller";
+import { authenticate, adminOnly } from "../middleware/auth.middleware";
 
 const router = Router();
 
 router.get("/", getAllInventory);
 router.get("/find/:id", getInventoryById);
-router.post("/create", createInventory);
-router.patch("/update/:id/", updateInventory);
-router.delete("/delete/:id", deleteInventory);
-router.patch("/update/:id/adjust", adjustStock);
+router.post("/create", authenticate, adminOnly, createInventory);
+router.patch("/update/:id/", authenticate, adminOnly, updateInventory);
+router.delete("/delete/:id", authenticate, adminOnly, deleteInventory);
+router.patch("/update/:id/adjust", authenticate, adminOnly, adjustStock);
 
 export default router;

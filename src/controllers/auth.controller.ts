@@ -4,7 +4,7 @@ import jwt, { SignOptions } from "jsonwebtoken";
 import { body, validationResult } from "express-validator";
 import { pool } from "../config/database";
 import { config } from "../config";
-import { User, UserResponse } from "../models/user.model";
+import { User, UserResponse } from "../types/user";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { AuthRequest } from "../middleware/auth.middleware";
 import crypto from "crypto";

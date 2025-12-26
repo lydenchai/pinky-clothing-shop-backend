@@ -188,21 +188,21 @@ export const initializeDatabase = async () => {
     ======================== */
     await connection.query(`
       CREATE TABLE IF NOT EXISTS wishlist (
+        _id VARCHAR(36) NOT NULL PRIMARY KEY,
         user_id VARCHAR(36) NOT NULL,
         product_id VARCHAR(36) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (user_id, product_id),
         FOREIGN KEY (user_id) REFERENCES users(_id) ON DELETE CASCADE,
         FOREIGN KEY (product_id) REFERENCES products(_id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
-    
+
     /* =======================
        SITE INFO
     ======================== */
     await connection.query(`
       CREATE TABLE IF NOT EXISTS site_info (
-        id INT PRIMARY KEY,
+        _id VARCHAR(36) NOT NULL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         description TEXT,
         contactEmail VARCHAR(255),

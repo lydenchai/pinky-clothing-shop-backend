@@ -486,8 +486,8 @@ export const seed = async () => {
 
     // Seed site_info
     await connection.query(
-      `INSERT INTO site_info (id, name, description, contactEmail, phone, address, logoUrl)
-       VALUES (1, 'Pinky Clothing Shop', 'A modern clothing shop for all your fashion needs.', 'info@pinkyshop.com', '+855 12 345 678', '123 Fashion St, Phnom Penh, Cambodia', '/imgs/logo.png')
+      `INSERT INTO site_info (_id, name, description, contactEmail, phone, address, logoUrl)
+       VALUES ('siteinfo', 'Pinky Clothing Shop', 'A modern clothing shop for all your fashion needs.', 'info@pinkyshop.com', '+855 12 345 678', '123 Fashion St, Phnom Penh, Cambodia', '/imgs/logo.png')
        ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), contactEmail=VALUES(contactEmail), phone=VALUES(phone), address=VALUES(address), logoUrl=VALUES(logoUrl)`
     );
     console.log("Site info seeded.");

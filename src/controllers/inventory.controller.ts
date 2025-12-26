@@ -213,6 +213,11 @@ export const adjustStock = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Inventory item not found" });
     }
     const newQuantity = item.quantity + amount;
+    if (newQuantity < 0) {
+      return res
+        .status(400)
+        .json({ message: "Insufficient stock. Cannot reduce below zero." });
+    }
     await pool.query(
       "UPDATE inventory SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE _id = ?",
       [newQuantity, req.params.id]

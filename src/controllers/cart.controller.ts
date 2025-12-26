@@ -11,10 +11,13 @@ export const cartItemValidation = [
     const body = req.body.data ? req.body.data : req.body;
     const product_id = body.product_id;
     // Accept both 24-char Mongo IDs and 36-char UUIDs
-    const isMongoId = typeof product_id === 'string' && /^[a-fA-F0-9]{24}$/.test(product_id);
-    const isUUID = typeof product_id === 'string' && product_id.length === 36;
+    const isMongoId =
+      typeof product_id === "string" && /^[a-fA-F0-9]{24}$/.test(product_id);
+    const isUUID = typeof product_id === "string" && product_id.length === 36;
     if (!isMongoId && !isUUID) {
-      throw new Error('Valid product ID is required (24-char MongoID or 36-char UUID)');
+      throw new Error(
+        "Valid product ID is required (24-char MongoID or 36-char UUID)"
+      );
     }
     return true;
   }),
@@ -22,7 +25,7 @@ export const cartItemValidation = [
     const body = req.body.data ? req.body.data : req.body;
     const quantity = body.quantity;
     if (!Number.isInteger(quantity) || quantity < 1) {
-      throw new Error('Quantity must be at least 1');
+      throw new Error("Quantity must be at least 1");
     }
     return true;
   }),
@@ -116,7 +119,7 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
     const product = products[0];
     if (product.stock < quantity) {
       return res.status(400).json({
-        error: "Insufficient stock",
+        error: `Only ${product.stock} item(s) left in stock. Please adjust your quantity.`,
         code: "INSUFFICIENT_STOCK",
       });
     }
@@ -140,7 +143,7 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
       const newQuantity = existingItems[0].quantity + quantity;
       if (product.stock < newQuantity) {
         return res.status(400).json({
-          error: "Insufficient stock",
+          error: `Only ${product.stock} item(s) left in stock. Please adjust your quantity.`,
           code: "INSUFFICIENT_STOCK",
         });
       }
@@ -213,7 +216,11 @@ export const updateCartItem = async (req: AuthRequest, res: Response) => {
     }
     const cartItem = cartItemRows[0];
     if (cartItem.stock < quantity) {
-      return res.status(400).json({ error: "Insufficient stock" });
+      return res
+        .status(400)
+        .json({
+          error: `Only ${cartItem.stock} item(s) left in stock. Please adjust your quantity.`,
+        });
     }
     await pool.query("UPDATE cart_items SET quantity = ? WHERE _id = ?", [
       quantity,

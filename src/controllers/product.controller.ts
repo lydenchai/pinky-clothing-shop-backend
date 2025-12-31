@@ -1,8 +1,9 @@
 // Helper to generate random code (alphanumeric, 5-10 chars)
 function generateProductCode() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   const codeLength = Math.floor(Math.random() * 6) + 5; // 5-10
-  let result = '';
+  let result = "";
   for (let i = 0; i < codeLength; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
@@ -117,25 +118,54 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { name, description, price, category, image, stock, sizes, colors, code } = req.body;
+    const { 
+      name,
+      description,
+      price,
+      category,
+      image,
+      stock,
+      sizes,
+      colors,
+      code,
+    } = req.body;
+    // Check for required fields
+    if (
+      !name ||
+      !description ||
+      typeof price === "undefined" ||
+      !category ||
+      typeof image === "undefined"
+    ) {
+      return res.status(400).json({
+        error: "Missing required fields",
+        details: { name, description, price, category, image },
+      });
+    }
     const _id = req.body._id || generateObjectId();
-    const productCode = code && code.trim() ? code.trim() : generateProductCode();
+    const productCode =
+      code && code.trim() ? code.trim() : generateProductCode();
+    // Ensure sizes and colors are never undefined
+    const safeSizes = typeof sizes === "undefined" ? null : sizes;
+    const safeColors = typeof colors === "undefined" ? null : colors;
     try {
+      const values = [
+        _id,
+        productCode,
+        name,
+        description,
+        price,
+        category,
+        image,
+        stock || 0,
+        safeSizes,
+        safeColors,
+      ];
+      console.log("Product INSERT values:", values);
       await pool.query<ResultSetHeader>(
         `INSERT INTO products (_id, code, name, description, price, category, image, stock, sizes, colors)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          _id,
-          productCode,
-          name,
-          description,
-          price,
-          category,
-          image,
-          stock || 0,
-          sizes || null,
-          colors || null,
-        ]
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        values
       );
     } catch (dbError) {
       console.error("DB Insert Error:", dbError);
@@ -164,7 +194,8 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
 export const updateProduct = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    let { name, description, price, category, image, stock, sizes, colors } = req.body;
+    let { name, description, price, category, image, stock, sizes, colors } =
+      req.body;
     // If a file was uploaded, use its path for image
     if (req.file) {
       image = req.file.path;

@@ -466,11 +466,20 @@ export const seed = async () => {
     }
     console.log("Users seeded.");
     for (const product of seedProducts) {
+      // Generate a random code for each product
+      const chars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      const codeLength = Math.floor(Math.random() * 6) + 5; // 5-10
+      let code = "";
+      for (let i = 0; i < codeLength; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
       await connection.query<ResultSetHeader>(
-        `INSERT INTO products (_id, name, description, price, category, image, stock, sizes, colors)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO products (_id, code, name, description, price, category, image, stock, sizes, colors)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           generateObjectId(),
+          code,
           product.name,
           product.description,
           product.price,
@@ -486,8 +495,8 @@ export const seed = async () => {
 
     // Seed site_info
     await connection.query(
-      `INSERT INTO site_info (_id, name, description, contactEmail, phone, address, logoUrl)
-       VALUES ('siteinfo', 'Pinky Clothing Shop', 'A modern clothing shop for all your fashion needs.', 'info@pinkyshop.com', '+855 12 345 678', '123 Fashion St, Phnom Penh, Cambodia', '/imgs/logo.png')
+      `INSERT INTO site_info (id, name, description, contactEmail, phone, address, logoUrl)
+       VALUES (1, 'Pinky Clothing Shop', 'A modern clothing shop for all your fashion needs.', 'info@pinkyshop.com', '+855 12 345 678', '123 Fashion St, Phnom Penh, Cambodia', '/imgs/logo.png')
        ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), contactEmail=VALUES(contactEmail), phone=VALUES(phone), address=VALUES(address), logoUrl=VALUES(logoUrl)`
     );
     console.log("Site info seeded.");
@@ -495,24 +504,29 @@ export const seed = async () => {
     // Seed sample orders
     // Fetch all user IDs and product IDs
     const [userRows] = await connection.query<any[]>(`SELECT _id FROM users`);
-    const [productRows] = await connection.query<any[]>(`SELECT _id, price FROM products`);
+    const [productRows] = await connection.query<any[]>(
+      `SELECT _id, price FROM products`
+    );
     if (userRows.length && productRows.length) {
       const orderStatuses = ["pending", "delivered", "cancelled"];
       const today = new Date();
-      for (let i = 0; i < 30; i++) { // 30 orders, one per day
+      for (let i = 0; i < 30; i++) {
+        // 30 orders, one per day
         const user = userRows[Math.floor(Math.random() * userRows.length)];
         // Pick 1-3 products per order
         const numProducts = Math.floor(Math.random() * 3) + 1;
         const products = [];
         let total = 0;
         for (let j = 0; j < numProducts; j++) {
-          const prod = productRows[Math.floor(Math.random() * productRows.length)];
+          const prod =
+            productRows[Math.floor(Math.random() * productRows.length)];
           const quantity = Math.floor(Math.random() * 3) + 1;
           products.push({ product_id: prod._id, quantity, price: prod.price });
           total += prod.price * quantity;
         }
         total = parseFloat(total.toFixed(2));
-        const status = orderStatuses[Math.floor(Math.random() * orderStatuses.length)];
+        const status =
+          orderStatuses[Math.floor(Math.random() * orderStatuses.length)];
         const created_at = new Date(today.getTime() - i * 24 * 60 * 60 * 1000); // spread over last 30 days
         // Use total_amount and add required shipping fields
         await connection.query<ResultSetHeader>(
@@ -523,11 +537,11 @@ export const seed = async () => {
             user._id,
             total,
             status,
-            user.address || '123 Main St',
-            user.city || 'Phnom Penh',
-            user.postal_code || '12000',
-            user.country || 'Cambodia',
-            created_at
+            user.address || "123 Main St",
+            user.city || "Phnom Penh",
+            user.postal_code || "12000",
+            user.country || "Cambodia",
+            created_at,
           ]
         );
         // Optionally, insert order items if you have an order_items table

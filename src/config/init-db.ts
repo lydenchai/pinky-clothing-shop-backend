@@ -21,6 +21,15 @@ export const initializeDatabase = async () => {
       );
     }
 
+    // Ensure 'code' column exists in products table (robust for MySQL 8.0+)
+    try {
+      await connection.query(
+        `ALTER TABLE products ADD COLUMN IF NOT EXISTS code VARCHAR(20) UNIQUE AFTER _id`
+      );
+    } catch (e) {
+      // Ignore error if column already exists or IF NOT EXISTS is not supported
+    }
+
     /* =======================
        USERS
     ======================== */
@@ -221,6 +230,7 @@ if (require.main === module) {
     try {
       await initializeDatabase();
       console.log("Database initialized");
+      console.log("\nYou can now run the seed script to populate initial data: node src/scripts/seed.ts\n");
       process.exit(0);
     } catch (err) {
       console.error(err);

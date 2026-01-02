@@ -211,13 +211,17 @@ export const initializeDatabase = async () => {
     ======================== */
     await connection.query(`
       CREATE TABLE IF NOT EXISTS site_info (
-        _id VARCHAR(36) NOT NULL PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         description TEXT,
-        contactEmail VARCHAR(255),
+        email VARCHAR(255),
         phone VARCHAR(50),
+        store_logo LONGTEXT,
+        favicon LONGTEXT,
         address VARCHAR(255),
-        logoUrl VARCHAR(255)
+        facebook VARCHAR(255),
+        instagram VARCHAR(255),
+        tik_tok VARCHAR(255),
+        meta_description TEXT
       )
     `);
   } finally {
@@ -230,7 +234,9 @@ if (require.main === module) {
     try {
       await initializeDatabase();
       console.log("Database initialized");
-      console.log("\nYou can now run the seed script to populate initial data: node src/scripts/seed.ts\n");
+      console.log(
+        "\nYou can now run the seed script to populate initial data: node src/scripts/seed.ts\n"
+      );
       process.exit(0);
     } catch (err) {
       console.error(err);

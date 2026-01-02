@@ -1,8 +1,13 @@
 export interface SiteInfo {
   name: string;
   description: string;
-  contactEmail: string;
+  email: string;
   phone?: string;
+  store_logo?: string;
+  favicon?: string;
   address?: string;
-  logoUrl?: string;
+  facebook?: string;
+  instagram?: string;
+  tik_tok?: string;
+  meta_description?: string;
 }

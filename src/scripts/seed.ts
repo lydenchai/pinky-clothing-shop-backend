@@ -1,7 +1,6 @@
 import { pool } from "../config/database";
 import bcrypt from "bcryptjs";
 import { ResultSetHeader } from "mysql2";
-import crypto from "crypto";
 import { generateCode } from "../utils/code.util";
 import { generateObjectId } from "../utils/objectid.util";
 
@@ -498,13 +497,15 @@ export const seed = async () => {
     console.log("Products seeded.");
 
     // Seed inventory for each product
-    const [allProducts] = await connection.query<any[]>(`SELECT _id FROM products`);
+    const [allProducts] = await connection.query<any[]>(
+      `SELECT _id FROM products`
+    );
     for (let i = 0; i < allProducts.length; i++) {
       const invId = generateObjectId();
       const invCode = generateCode(i, "I");
       const productId = allProducts[i]._id;
       const quantity = Math.floor(Math.random() * 50) + 1;
-      const location = `Warehouse ${((i % 3) + 1)}`;
+      const location = `Warehouse ${(i % 3) + 1}`;
       await connection.query<ResultSetHeader>(
         `INSERT INTO inventory (_id, code, product_id, quantity, location)
          VALUES (?, ?, ?, ?, ?)
@@ -516,9 +517,9 @@ export const seed = async () => {
 
     // Seed site_info
     await connection.query(
-      `INSERT INTO site_info (id, name, description, contactEmail, phone, address, logoUrl)
-       VALUES (1, 'Pinky Clothing Shop', 'A modern clothing shop for all your fashion needs.', 'info@pinkyshop.com', '+855 12 345 678', '123 Fashion St, Phnom Penh, Cambodia', '/imgs/logo.png')
-       ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), contactEmail=VALUES(contactEmail), phone=VALUES(phone), address=VALUES(address), logoUrl=VALUES(logoUrl)`
+      `INSERT INTO site_info (name, description, email, phone, store_logo, favicon, address, facebook, instagram, tik_tok, meta_description)
+       VALUES ('Pinky Clothing Shop', 'A modern clothing shop for all your fashion needs.', 'info@pinkyshop.com', '+855 12 345 678', '/imgs/logo.png', '/imgs/favicon.png', '123 Fashion St, Phnom Penh, Cambodia', 'https://facebook.com/pinkyshop', 'https://instagram.com/pinkyshop', 'https://tiktok.com/@pinkyshop', 'Best fashion shop in Cambodia')
+       ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), email=VALUES(email), phone=VALUES(phone), store_logo=VALUES(store_logo), favicon=VALUES(favicon), address=VALUES(address), facebook=VALUES(facebook), instagram=VALUES(instagram), tik_tok=VALUES(tik_tok), meta_description=VALUES(meta_description)`
     );
     console.log("Site info seeded.");
 
@@ -539,13 +540,19 @@ export const seed = async () => {
         const orderItems = [];
         let total = 0;
         for (let j = 0; j < numProducts; j++) {
-          const prod = productRows[Math.floor(Math.random() * productRows.length)];
+          const prod =
+            productRows[Math.floor(Math.random() * productRows.length)];
           const quantity = Math.floor(Math.random() * 3) + 1;
-          orderItems.push({ product_id: prod._id, quantity, price: prod.price });
+          orderItems.push({
+            product_id: prod._id,
+            quantity,
+            price: prod.price,
+          });
           total += prod.price * quantity;
         }
         total = parseFloat(total.toFixed(2));
-        const status = orderStatuses[Math.floor(Math.random() * orderStatuses.length)];
+        const status =
+          orderStatuses[Math.floor(Math.random() * orderStatuses.length)];
         const created_at = new Date(today.getTime() - i * 24 * 60 * 60 * 1000); // spread over last 30 days
         const orderId = generateObjectId();
         const orderCode = generateCode(i, "O");
@@ -569,7 +576,13 @@ export const seed = async () => {
         for (const item of orderItems) {
           await connection.query<ResultSetHeader>(
             `INSERT INTO order_items (_id, order_id, product_id, quantity, price) VALUES (?, ?, ?, ?, ?)`,
-            [generateObjectId(), orderId, item.product_id, item.quantity, item.price]
+            [
+              generateObjectId(),
+              orderId,
+              item.product_id,
+              item.quantity,
+              item.price,
+            ]
           );
         }
       }

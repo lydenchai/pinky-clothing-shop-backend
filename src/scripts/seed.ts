@@ -2,12 +2,8 @@ import { pool } from "../config/database";
 import bcrypt from "bcryptjs";
 import { ResultSetHeader } from "mysql2";
 import crypto from "crypto";
-
-export function generateObjectId(): string {
-  const timestamp = Math.floor(Date.now() / 1000).toString(16);
-  const random = crypto.randomBytes(8).toString("hex");
-  return timestamp + random; // 24 chars
-}
+import { generateCode } from "../utils/code.util";
+import { generateObjectId } from "../utils/objectid.util";
 
 // Product templates for generating realistic products
 const productTemplates = {
@@ -444,7 +440,6 @@ export const seed = async () => {
     // Seed users
     for (const user of seedUsers) {
       const hashedPassword = await bcrypt.hash(user.password, 10);
-
       await connection.query<ResultSetHeader>(
         `INSERT INTO users (_id, email, password, first_name, last_name, address, city, postal_code, country, phone, role)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -465,18 +460,27 @@ export const seed = async () => {
       );
     }
     console.log("Users seeded.");
-    for (const product of seedProducts) {
-      // Generate a random code for each product
-      const chars =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-      const codeLength = Math.floor(Math.random() * 6) + 5; // 5-10
-      let code = "";
-      for (let i = 0; i < codeLength; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
+
+    // Robust product code generation: get max code from DB
+    const [maxCodeRows] = await connection.query<any[]>(
+      `SELECT code FROM products WHERE code LIKE 'P%' ORDER BY code DESC LIMIT 1`
+    );
+    let lastNumber = 0;
+    if (maxCodeRows.length > 0) {
+      const lastCode = maxCodeRows[0].code;
+      // Extract numeric part: e.g., P26001 -> 001
+      const match = lastCode.match(/^P\d{2}(\d{3})$/);
+      if (match) {
+        lastNumber = parseInt(match[1], 10);
       }
+    }
+    for (let i = 0; i < seedProducts.length; i++) {
+      const product = seedProducts[i];
+      const code = generateCode(lastNumber + i, "P");
       await connection.query<ResultSetHeader>(
         `INSERT INTO products (_id, code, name, description, price, category, image, stock, sizes, colors)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE code=code`,
         [
           generateObjectId(),
           code,
@@ -492,6 +496,23 @@ export const seed = async () => {
       );
     }
     console.log("Products seeded.");
+
+    // Seed inventory for each product
+    const [allProducts] = await connection.query<any[]>(`SELECT _id FROM products`);
+    for (let i = 0; i < allProducts.length; i++) {
+      const invId = generateObjectId();
+      const invCode = generateCode(i, "I");
+      const productId = allProducts[i]._id;
+      const quantity = Math.floor(Math.random() * 50) + 1;
+      const location = `Warehouse ${((i % 3) + 1)}`;
+      await connection.query<ResultSetHeader>(
+        `INSERT INTO inventory (_id, code, product_id, quantity, location)
+         VALUES (?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE code=code`,
+        [invId, invCode, productId, quantity, location]
+      );
+    }
+    console.log("Inventory seeded.");
 
     // Seed site_info
     await connection.query(
@@ -513,27 +534,27 @@ export const seed = async () => {
       for (let i = 0; i < 30; i++) {
         // 30 orders, one per day
         const user = userRows[Math.floor(Math.random() * userRows.length)];
-        // Pick 1-3 products per order
-        const numProducts = Math.floor(Math.random() * 3) + 1;
-        const products = [];
+        // Pick 1-3 products per order (always at least 1)
+        const numProducts = Math.max(1, Math.floor(Math.random() * 3) + 1);
+        const orderItems = [];
         let total = 0;
         for (let j = 0; j < numProducts; j++) {
-          const prod =
-            productRows[Math.floor(Math.random() * productRows.length)];
+          const prod = productRows[Math.floor(Math.random() * productRows.length)];
           const quantity = Math.floor(Math.random() * 3) + 1;
-          products.push({ product_id: prod._id, quantity, price: prod.price });
+          orderItems.push({ product_id: prod._id, quantity, price: prod.price });
           total += prod.price * quantity;
         }
         total = parseFloat(total.toFixed(2));
-        const status =
-          orderStatuses[Math.floor(Math.random() * orderStatuses.length)];
+        const status = orderStatuses[Math.floor(Math.random() * orderStatuses.length)];
         const created_at = new Date(today.getTime() - i * 24 * 60 * 60 * 1000); // spread over last 30 days
-        // Use total_amount and add required shipping fields
+        const orderId = generateObjectId();
+        const orderCode = generateCode(i, "O");
         await connection.query<ResultSetHeader>(
-          `INSERT INTO orders (_id, user_id, total_amount, status, shipping_address, shipping_city, shipping_postal_code, shipping_country, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO orders (_id, code, user_id, total_amount, status, shipping_address, shipping_city, shipping_postal_code, shipping_country, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            generateObjectId(),
+            orderId,
+            orderCode,
             user._id,
             total,
             status,
@@ -544,7 +565,13 @@ export const seed = async () => {
             created_at,
           ]
         );
-        // Optionally, insert order items if you have an order_items table
+        // Insert order items
+        for (const item of orderItems) {
+          await connection.query<ResultSetHeader>(
+            `INSERT INTO order_items (_id, order_id, product_id, quantity, price) VALUES (?, ?, ?, ?, ?)`,
+            [generateObjectId(), orderId, item.product_id, item.quantity, item.price]
+          );
+        }
       }
       console.log("Sample orders seeded.");
     }

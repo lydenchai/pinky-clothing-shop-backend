@@ -2,7 +2,7 @@ import { Response } from "express";
 import { AuthRequest } from "../middleware/auth.middleware";
 import { pool } from "../config/database";
 import { RowDataPacket } from "mysql2";
-import { generateObjectId } from "./auth.controller";
+import { generateObjectId } from "../utils/objectid.util";
 
 export const getUserWishlist = async (req: AuthRequest, res: Response) => {
   try {

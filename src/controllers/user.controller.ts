@@ -2,7 +2,7 @@ import { Response } from "express";
 import { pool } from "../config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { AuthRequest } from "../middleware/auth.middleware";
-import { generateObjectId } from "./auth.controller";
+import { generateObjectId } from "../utils/objectid.util";
 
 export const getAllUsers = async (req: AuthRequest, res: Response) => {
   try {

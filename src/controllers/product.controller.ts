@@ -1,20 +1,10 @@
-// Helper to generate random code (alphanumeric, 5-10 chars)
-function generateProductCode() {
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  const codeLength = Math.floor(Math.random() * 6) + 5; // 5-10
-  let result = "";
-  for (let i = 0; i < codeLength; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
 import { Request, Response } from "express";
 import { pool } from "../config/database";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { body, validationResult } from "express-validator";
 import { AuthRequest } from "../middleware/auth.middleware";
-import { generateObjectId } from "./auth.controller";
+import { generateCode } from "../utils/code.util";
+import { generateObjectId } from "../utils/objectid.util";
 
 export const productValidation = [
   body("name").notEmpty().withMessage("Product name is required"),
@@ -23,7 +13,6 @@ export const productValidation = [
     .isFloat({ min: 0 })
     .withMessage("Price must be a positive number"),
   body("category").notEmpty().withMessage("Category is required"),
-  // body("image").notEmpty().withMessage("Image URL is required"),
   body("stock")
     .isInt({ min: 0 })
     .withMessage("Stock must be a non-negative integer"),
@@ -31,8 +20,17 @@ export const productValidation = [
 
 export const getAllProducts = async (req: Request, res: Response) => {
   try {
-    let { category, minPrice, maxPrice, search, inStock, page, limit, q } =
-      req.query;
+    let {
+      code,
+      category,
+      minPrice,
+      maxPrice,
+      search,
+      inStock,
+      page,
+      limit,
+      q,
+    } = req.query;
     if (!search && q) search = q;
 
     // Pagination parameters
@@ -43,27 +41,27 @@ export const getAllProducts = async (req: Request, res: Response) => {
     let query = "SELECT * FROM products WHERE 1=1";
     const params: any[] = [];
 
+    if (code) {
+      query += " AND code LIKE ?";
+      params.push(`%${code}%`);
+    }
     if (category) {
       query += " AND LOWER(category) = LOWER(?)";
       params.push(category);
     }
-
     if (minPrice) {
       query += " AND price >= ?";
       params.push(parseFloat(minPrice as string));
     }
-
     if (maxPrice) {
       query += " AND price <= ?";
       params.push(parseFloat(maxPrice as string));
     }
-
     if (search) {
-      query += " AND (name LIKE ? OR description LIKE ?)";
+      query += " AND (code LIKE ? OR name LIKE ?)";
       const searchTerm = `%${search}%`;
       params.push(searchTerm, searchTerm);
     }
-
     if (inStock === "true") {
       query += " AND stock > 0";
     }
@@ -118,7 +116,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { 
+    const {
       name,
       description,
       price,
@@ -144,7 +142,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
     }
     const _id = req.body._id || generateObjectId();
     const productCode =
-      code && code.trim() ? code.trim() : generateProductCode();
+      code && code.trim() ? code.trim() : generateCode(0, "P");
     // Ensure sizes and colors are never undefined
     const safeSizes = typeof sizes === "undefined" ? null : sizes;
     const safeColors = typeof colors === "undefined" ? null : colors;

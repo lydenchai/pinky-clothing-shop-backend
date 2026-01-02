@@ -7,13 +7,7 @@ import { config } from "../config";
 import { User, UserResponse } from "../types/user";
 import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { AuthRequest } from "../middleware/auth.middleware";
-import crypto from "crypto";
-
-export function generateObjectId(): string {
-  const timestamp = Math.floor(Date.now() / 1000).toString(16);
-  const random = crypto.randomBytes(8).toString("hex");
-  return timestamp + random; // 24 chars
-}
+import { generateObjectId } from "../utils/objectid.util";
 
 export const registerValidation = [
   body("email").isEmail().withMessage("Invalid email address"),

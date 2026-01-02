@@ -1,21 +1,12 @@
-// Helper to generate random code (alphanumeric, 5-10 chars)
-function generateInventoryCode() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  const codeLength = Math.floor(Math.random() * 6) + 5; // 5-10
-  let result = '';
-  for (let i = 0; i < codeLength; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
 import { Request, Response } from "express";
 import { pool } from "../config/database";
-import { generateObjectId } from "./auth.controller";
 import { RowDataPacket } from "mysql2";
+import { generateObjectId } from "../utils/objectid.util";
+import { generateCode } from "../utils/code.util";
 
 export const getAllInventory = async (req: Request, res: Response) => {
   try {
-    let { page, limit, search, q } = req.query;
+    let { code, page, limit, search, q } = req.query;
     if (!search && q) search = q;
 
     // Pagination parameters
@@ -23,14 +14,20 @@ export const getAllInventory = async (req: Request, res: Response) => {
     const itemsPerPage = parseInt(limit as string) || 15;
     const offset = (currentPage - 1) * itemsPerPage;
 
-    // Add search filter if present
+    // Add search filter for code, product name, or location
     let searchClause = "";
     let searchParams: any[] = [];
+    if (code) {
+      searchClause +=
+        (searchClause ? " AND" : " WHERE") + " inventory.code LIKE ?";
+      searchParams.push(`%${code}%`);
+    }
     if (search) {
-      searchClause =
-        " WHERE (inventory._id LIKE ? OR products.name LIKE ? OR inventory.location LIKE ?)";
+      searchClause +=
+        (searchClause ? " AND" : " WHERE") +
+        " (inventory.code LIKE ? OR products.name LIKE ? OR inventory.location LIKE ?)";
       const s = `%${search}%`;
-      searchParams = [s, s, s];
+      searchParams.push(s, s, s);
     }
 
     // Total count
@@ -57,6 +54,7 @@ export const getAllInventory = async (req: Request, res: Response) => {
     // Map rows to include product object
     const data = (rows as any[]).map((row) => ({
       _id: row._id,
+      code: row.code,
       quantity: row.quantity,
       location: row.location,
       created_at: row.created_at,
@@ -106,6 +104,7 @@ export const getInventoryById = async (req: Request, res: Response) => {
 
     const inventoryItem = {
       _id: item._id,
+      code: item.code,
       quantity: item.quantity,
       location: item.location,
       created_at: item.created_at,
@@ -131,17 +130,31 @@ export const createInventory = async (req: Request, res: Response) => {
     const { product_id, quantity, location, code } = req.body;
     // Generate _id if not provided
     const _id = req.body._id || generateObjectId();
-    const inventoryCode = code && code.trim() ? code.trim() : generateInventoryCode();
+    const inventoryCode =
+      code && code.trim() ? code.trim() : generateCode(0, "I");
     const [result] = await pool.query(
       "INSERT INTO inventory (_id, code, product_id, quantity, location) VALUES (?, ?, ?, ?, ?)",
       [_id, inventoryCode, product_id, quantity, location]
     );
-    const [rows] = await pool.query("SELECT * FROM inventory WHERE _id = ?", [
-      _id,
-    ]);
-    res
-      .status(201)
-      .json({ data: Array.isArray(rows) ? rows[0] : null, success: true });
+    const [rows] = await pool.query<RowDataPacket[]>(
+      "SELECT * FROM inventory WHERE _id = ?",
+      [_id]
+    );
+    const item = Array.isArray(rows) ? rows[0] : null;
+    res.status(201).json({
+      data: item
+        ? {
+            _id: item._id,
+            code: item.code,
+            quantity: item.quantity,
+            location: item.location,
+            created_at: item.created_at,
+            updated_at: item.updated_at,
+            product_id: item.product_id,
+          }
+        : null,
+      success: true,
+    });
   } catch (err) {
     res
       .status(500)
@@ -180,11 +193,23 @@ export const updateInventory = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Inventory item not found" });
     }
 
-    const [rows] = await pool.query(`SELECT * FROM inventory WHERE _id = ?`, [
-      _id,
-    ]);
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT * FROM inventory WHERE _id = ?`,
+      [_id]
+    );
+    const item = Array.isArray(rows) ? rows[0] : null;
     res.json({
-      data: Array.isArray(rows) ? rows[0] : null,
+      data: item
+        ? {
+            _id: item._id,
+            code: item.code,
+            quantity: item.quantity,
+            location: item.location,
+            created_at: item.created_at,
+            updated_at: item.updated_at,
+            product_id: item.product_id,
+          }
+        : null,
       success: true,
     });
   } catch (err) {
@@ -233,12 +258,23 @@ export const adjustStock = async (req: Request, res: Response) => {
       "UPDATE inventory SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE _id = ?",
       [newQuantity, req.params.id]
     );
-    const [updatedRows] = await pool.query(
+    const [updatedRows] = await pool.query<RowDataPacket[]>(
       "SELECT * FROM inventory WHERE _id = ?",
       [req.params.id]
     );
+    const updated = Array.isArray(updatedRows) ? updatedRows[0] : null;
     res.json({
-      data: Array.isArray(updatedRows) ? updatedRows[0] : null,
+      data: updated
+        ? {
+            _id: updated._id,
+            code: updated.code,
+            quantity: updated.quantity,
+            location: updated.location,
+            created_at: updated.created_at,
+            updated_at: updated.updated_at,
+            product_id: updated.product_id,
+          }
+        : null,
       success: true,
     });
   } catch (err) {

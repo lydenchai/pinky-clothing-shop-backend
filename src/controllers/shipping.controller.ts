@@ -1,21 +1,12 @@
-// Helper to generate random code (alphanumeric, 5-10 chars)
-function generateShippingCode() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  const codeLength = Math.floor(Math.random() * 6) + 5; // 5-10
-  let result = '';
-  for (let i = 0; i < codeLength; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
 import { Request, Response } from "express";
 import { pool } from "../config/database";
-import { generateObjectId } from "./auth.controller";
+import { generateObjectId } from "../utils/objectid.util";
+import { generateCode } from "../utils/code.util";
 
 // Get all shippings with pagination and search
 export const getAllShippings = async (req: Request, res: Response) => {
   try {
-    let { page, limit, search, q } = req.query;
+    let { code,description, page, limit, search, q } = req.query;
     if (!search && q) search = q;
     const currentPage = parseInt(page as string) || 1;
     const itemsPerPage = parseInt(limit as string) || 15;
@@ -23,9 +14,19 @@ export const getAllShippings = async (req: Request, res: Response) => {
     let searchClause = "";
     let searchParams: any[] = [];
     if (search) {
-      searchClause = " WHERE name LIKE ? OR description LIKE ?";
+      searchClause = " WHERE code LIKE ? OR name LIKE ? OR description LIKE ?";
       const s = `%${search}%`;
-      searchParams = [s, s];
+      searchParams = [s, s, s];
+    }
+    if (code) {
+      searchClause += searchClause ? " AND" : " WHERE";
+      searchClause += " code LIKE ?";
+      searchParams.push(`%${code}%`);
+    }
+    if (description) {
+      searchClause += searchClause ? " AND" : " WHERE";
+      searchClause += " description LIKE ?";
+      searchParams.push(`%${description}%`);
     }
     // Total count
     const [countRows] = await pool.query(
@@ -118,11 +119,12 @@ export const createShipping = async (req: Request, res: Response) => {
       max_order,
       estimated_days,
       active,
-      code
+      code,
     } = req.body;
     // Generate _id if not provided
     const _id = req.body._id || generateObjectId();
-    const shippingCode = code && code.trim() ? code.trim() : generateShippingCode();
+    const shippingCode =
+      code && code.trim() ? code.trim() : generateCode(0, "S");
     const [result] = await pool.query(
       "INSERT INTO shippings (_id, code, name, description, country, price, min_order, max_order, estimated_days, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [

@@ -78,9 +78,38 @@ export const getAllProducts = async (req: Request, res: Response) => {
 
     const [products] = await pool.query<RowDataPacket[]>(query, params);
 
+    // Ensure price is float and sizes/colors are arrays in response, robust to legacy/corrupt data
+    const parseArrayField = (field: any) => {
+      if (Array.isArray(field)) return field;
+      if (typeof field === "string") {
+        try {
+          // Try JSON.parse
+          const parsed = JSON.parse(field);
+          if (Array.isArray(parsed)) return parsed;
+        } catch (e) {
+          // Fallback: comma-split if looks like CSV
+          if (field.includes(",")) {
+            return field
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean);
+          }
+        }
+      }
+      return [];
+    };
+    const productsWithParsedFields = products.map((p) => ({
+      ...p,
+      price:
+        p.price !== undefined && p.price !== null
+          ? parseFloat(p.price)
+          : p.price,
+      sizes: parseArrayField(p.sizes),
+      colors: parseArrayField(p.colors),
+    }));
     res.json({
       success: true,
-      data: products,
+      data: productsWithParsedFields,
       pagination: {
         page: currentPage,
         limit: itemsPerPage,
@@ -103,7 +132,33 @@ export const getProductById = async (req: Request, res: Response) => {
     if (products.length === 0) {
       return res.status(404).json({ data: null, message: "Product not found" });
     }
-    res.json({ data: products[0], success: true });
+    // Ensure price is float and sizes/colors are arrays in response, robust to legacy/corrupt data
+    const parseArrayField = (field: any) => {
+      if (Array.isArray(field)) return field;
+      if (typeof field === "string") {
+        try {
+          const parsed = JSON.parse(field);
+          if (Array.isArray(parsed)) return parsed;
+        } catch (e) {
+          if (field.includes(",")) {
+            return field
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean);
+          }
+        }
+      }
+      return [];
+    };
+    const product = products[0];
+    if (product) {
+      if (product.price !== undefined && product.price !== null) {
+        product.price = parseFloat(product.price);
+      }
+      product.sizes = parseArrayField(product.sizes);
+      product.colors = parseArrayField(product.colors);
+    }
+    res.json({ success: true, data: product });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }
@@ -176,7 +231,33 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
         "SELECT * FROM products WHERE _id = ?",
         [_id]
       );
-      res.status(201).json({ data: products[0], success: true });
+      // Ensure price is float and sizes/colors are arrays in response, robust to legacy/corrupt data
+      const parseArrayField = (field: any) => {
+        if (Array.isArray(field)) return field;
+        if (typeof field === "string") {
+          try {
+            const parsed = JSON.parse(field);
+            if (Array.isArray(parsed)) return parsed;
+          } catch (e) {
+            if (field.includes(",")) {
+              return field
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
+            }
+          }
+        }
+        return [];
+      };
+      const product = products[0];
+      if (product) {
+        if (product.price !== undefined && product.price !== null) {
+          product.price = parseFloat(product.price);
+        }
+        product.sizes = parseArrayField(product.sizes);
+        product.colors = parseArrayField(product.colors);
+      }
+      res.status(201).json({ data: product, success: true });
     } catch (dbError) {
       console.error("DB Select Error:", dbError);
       return res
@@ -227,7 +308,33 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
       "SELECT * FROM products WHERE _id = ?",
       [id]
     );
-    res.json({ data: products[0], success: true });
+    // Ensure price is float and sizes/colors are arrays in response, robust to legacy/corrupt data
+    const parseArrayField = (field: any) => {
+      if (Array.isArray(field)) return field;
+      if (typeof field === "string") {
+        try {
+          const parsed = JSON.parse(field);
+          if (Array.isArray(parsed)) return parsed;
+        } catch (e) {
+          if (field.includes(",")) {
+            return field
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean);
+          }
+        }
+      }
+      return [];
+    };
+    const product = products[0];
+    if (product) {
+      if (product.price !== undefined && product.price !== null) {
+        product.price = parseFloat(product.price);
+      }
+      product.sizes = parseArrayField(product.sizes);
+      product.colors = parseArrayField(product.colors);
+    }
+    res.json({ data: product, success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
   }

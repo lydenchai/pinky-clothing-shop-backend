@@ -154,6 +154,7 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
     const allowedFields = [
       "first_name",
       "last_name",
+      "email",
       "address",
       "city",
       "postal_code",

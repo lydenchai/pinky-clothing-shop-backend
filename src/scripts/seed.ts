@@ -401,8 +401,8 @@ function generateProducts(count: number = 100) {
         category: demographic,
         image: image,
         stock: stock,
-        sizes: sizes[productType],
-        colors: colors[productType],
+        sizes: sizes[productType].split(","),
+        colors: colors[productType].split(","),
       });
     }
   }
@@ -489,8 +489,8 @@ export const seed = async () => {
           product.category,
           product.image,
           product.stock,
-          product.sizes,
-          product.colors,
+          JSON.stringify(product.sizes),
+          JSON.stringify(product.colors),
         ]
       );
     }

@@ -12,22 +12,22 @@ export const initializeDatabase = async () => {
        FROM INFORMATION_SCHEMA.COLUMNS
        WHERE TABLE_SCHEMA = DATABASE()
          AND TABLE_NAME = 'products'
-         AND COLUMN_NAME = 'imageUrl'`
+         AND COLUMN_NAME = 'imageUrl'`,
     );
 
     if ((imageCols as any[]).length > 0) {
       await connection.query(
-        `ALTER TABLE products CHANGE COLUMN imageUrl image TEXT`
+        `ALTER TABLE products CHANGE COLUMN imageUrl image TEXT`,
       );
     }
 
     // Ensure 'code' column exists in products table (robust for MySQL 8.0+)
     try {
       await connection.query(
-        `ALTER TABLE products ADD COLUMN IF NOT EXISTS code VARCHAR(20) UNIQUE AFTER _id`
+        `ALTER TABLE products ADD COLUMN IF NOT EXISTS code VARCHAR(20) UNIQUE AFTER _id`,
       );
     } catch (e) {
-      // Ignore error if column already exists or IF NOT EXISTS is not supported
+      console.error(e);
     }
 
     /* =======================
@@ -235,7 +235,7 @@ if (require.main === module) {
       await initializeDatabase();
       console.log("Database initialized");
       console.log(
-        "\nYou can now run the seed script to populate initial data: node src/scripts/seed.ts\n"
+        "\nYou can now run the seed script to populate initial data: node src/scripts/seed.ts\n",
       );
       process.exit(0);
     } catch (err) {

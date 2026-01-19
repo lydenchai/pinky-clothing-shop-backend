@@ -17,7 +17,7 @@ export const cartItemValidation = [
     const isUUID = typeof product_id === "string" && product_id.length === 36;
     if (!isMongoId && !isUUID) {
       throw new Error(
-        "Valid product ID is required (24-char MongoID or 36-char UUID)"
+        "Valid product ID is required (24-char MongoID or 36-char UUID)",
       );
     }
     return true;
@@ -42,15 +42,18 @@ export const getCart = async (req: AuthRequest, res: Response) => {
        JOIN products p ON ci.product_id = p._id
        WHERE ci.user_id = ?
        ORDER BY ci.created_at DESC`,
-      [req.user_id]
+      [req.user_id],
     );
 
     // Calculate cart summary
     const subtotal = items.reduce(
       (sum, item) => sum + (item.product_price ?? 0) * item.quantity,
-      0
+      0,
     );
-    const shipping = subtotal > 0 ? (subtotal > 100 ? 0 : 10) : 0;
+    let shipping = 0;
+    if (subtotal > 0) {
+      shipping = subtotal > 100 ? 0 : 10;
+    }
     const tax = subtotal * 0.08;
     const total = subtotal + shipping + tax;
     res.json({
@@ -66,6 +69,7 @@ export const getCart = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
   }
 };
 
@@ -79,7 +83,7 @@ export const getCartItemById = async (req: AuthRequest, res: Response) => {
        FROM cart_items ci
        JOIN products p ON ci.product_id = p._id
        WHERE ci._id = ?`,
-      [id]
+      [id],
     );
     if (items.length === 0) {
       return res.status(404).json({ error: "Cart item not found" });
@@ -87,12 +91,123 @@ export const getCartItemById = async (req: AuthRequest, res: Response) => {
     res.json({ data: items[0], success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
   }
 };
 
+// Helper to validate and get product
+async function validateAndGetProduct(
+  product_id: string,
+  quantity: number,
+  res: Response,
+) {
+  const [products] = await pool.query<RowDataPacket[]>(
+    "SELECT _id, stock FROM products WHERE _id = ?",
+    [product_id],
+  );
+  if (products.length === 0) {
+    res.status(404).json({
+      error: "Product not found",
+      code: "PRODUCT_NOT_FOUND",
+    });
+    return null;
+  }
+  const product = products[0];
+  if (product.stock < quantity) {
+    res.status(400).json({
+      error: `Only ${product.stock} item(s) left in stock. Please adjust your quantity.`,
+      code: "INSUFFICIENT_STOCK",
+    });
+    return null;
+  }
+  return product;
+}
+
+// Helper to update or insert cart item
+async function updateOrInsertCartItem({
+  req,
+  body,
+  product,
+  res,
+}: {
+  req: AuthRequest;
+  body: any;
+  product: any;
+  res: Response;
+}) {
+  const { product_id, quantity, size, color } = body;
+  const [existingItems] = await pool.query<RowDataPacket[]>(
+    'SELECT _id, quantity FROM cart_items WHERE user_id = ? AND product_id = ? AND COALESCE(size, "") = ? AND COALESCE(color, "") = ?',
+    [req.user_id, product_id, size || "", color || ""],
+  );
+  if (existingItems.length > 0) {
+    const newQuantity = existingItems[0].quantity + quantity;
+    if (product.stock < newQuantity) {
+      res.status(400).json({
+        error: `Only ${product.stock} item(s) left in stock. Please adjust your quantity.`,
+        code: "INSUFFICIENT_STOCK",
+      });
+      return false;
+    }
+    await pool.query("UPDATE cart_items SET quantity = ? WHERE _id = ?", [
+      newQuantity,
+      existingItems[0]._id,
+    ]);
+  } else {
+    const newId = generateObjectId();
+    const cartCode = body.code?.trim()
+      ? body.code.trim()
+      : generateCode(0, "S");
+    await pool.query<ResultSetHeader>(
+      "INSERT INTO cart_items (_id, code, user_id, product_id, quantity, size, color) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [
+        newId,
+        cartCode,
+        req.user_id,
+        product_id,
+        quantity,
+        size || null,
+        color || null,
+      ],
+    );
+  }
+  return true;
+}
+
+// Helper to get cart summary
+async function getCartSummary(user_id: string) {
+  const [cartItems] = await pool.query<RowDataPacket[]>(
+    `SELECT 
+      ci._id, ci.user_id, ci.product_id, ci.quantity, ci.size, ci.color, ci.created_at,
+      p.name as product_name, p.price as product_price, p.image as product_image, p.stock as product_stock
+     FROM cart_items ci
+     JOIN products p ON ci.product_id = p._id
+     WHERE ci.user_id = ?
+     ORDER BY ci.created_at DESC`,
+    [user_id],
+  );
+  const subtotal = cartItems.reduce(
+    (sum, item) => sum + (item.product_price ?? 0) * item.quantity,
+    0,
+  );
+  let shipping = 0;
+  if (subtotal > 0) {
+    shipping = subtotal > 100 ? 0 : 10;
+  }
+  const tax = subtotal * 0.08;
+  const total = subtotal + shipping + tax;
+  return {
+    items: cartItems,
+    totalItems: cartItems.reduce((sum, item) => sum + item.quantity, 0),
+    subtotal,
+    shipping,
+    tax,
+    total,
+  };
+}
+
 export const addToCart = async (req: AuthRequest, res: Response) => {
   try {
-    // Support both flat and nested 'data' payloads
     const body = req.body.data ? req.body.data : req.body;
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -102,30 +217,8 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const { product_id, quantity, size, color } = body;
+    const { product_id, quantity } = body;
 
-    // Check if product exists and has enough stock
-    const [products] = await pool.query<RowDataPacket[]>(
-      "SELECT _id, stock FROM products WHERE _id = ?",
-      [product_id]
-    );
-
-    if (products.length === 0) {
-      return res.status(404).json({
-        error: "Product not found",
-        code: "PRODUCT_NOT_FOUND",
-      });
-    }
-
-    const product = products[0];
-    if (product.stock < quantity) {
-      return res.status(400).json({
-        error: `Only ${product.stock} item(s) left in stock. Please adjust your quantity.`,
-        code: "INSUFFICIENT_STOCK",
-      });
-    }
-
-    // Check authentication
     if (!req.user_id) {
       return res.status(401).json({
         error: "Unauthorized",
@@ -133,69 +226,15 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Check if item already exists in cart
-    const [existingItems] = await pool.query<RowDataPacket[]>(
-      'SELECT _id, quantity FROM cart_items WHERE user_id = ? AND product_id = ? AND COALESCE(size, "") = ? AND COALESCE(color, "") = ?',
-      [req.user_id, product_id, size || "", color || ""]
-    );
+    const product = await validateAndGetProduct(product_id, quantity, res);
+    if (!product) return;
 
-    if (existingItems.length > 0) {
-      // Update existing item
-      const newQuantity = existingItems[0].quantity + quantity;
-      if (product.stock < newQuantity) {
-        return res.status(400).json({
-          error: `Only ${product.stock} item(s) left in stock. Please adjust your quantity.`,
-          code: "INSUFFICIENT_STOCK",
-        });
-      }
-      await pool.query("UPDATE cart_items SET quantity = ? WHERE _id = ?", [
-        newQuantity,
-        existingItems[0]._id,
-      ]);
-    } else {
-      const newId = generateObjectId();
-      const cartCode =
-        body.code && body.code.trim() ? body.code.trim() : generateCode(0, 'S');
-      await pool.query<ResultSetHeader>(
-        "INSERT INTO cart_items (_id, code, user_id, product_id, quantity, size, color) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [
-          newId,
-          cartCode,
-          req.user_id,
-          product_id,
-          quantity,
-          size || null,
-          color || null,
-        ]
-      );
-    }
-    // Always return the full updated cart as an object
-    const [cartItems] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        ci._id, ci.user_id, ci.product_id, ci.quantity, ci.size, ci.color, ci.created_at,
-        p.name as product_name, p.price as product_price, p.image as product_image, p.stock as product_stock
-       FROM cart_items ci
-       JOIN products p ON ci.product_id = p._id
-       WHERE ci.user_id = ?
-       ORDER BY ci.created_at DESC`,
-      [req.user_id]
-    );
-    const subtotal = cartItems.reduce(
-      (sum, item) => sum + (item.product_price ?? 0) * item.quantity,
-      0
-    );
-    const shipping = subtotal > 0 ? (subtotal > 100 ? 0 : 10) : 0;
-    const tax = subtotal * 0.08;
-    const total = subtotal + shipping + tax;
+    const updated = await updateOrInsertCartItem({ req, body, product, res });
+    if (!updated) return;
+
+    const cartSummary = await getCartSummary(req.user_id);
     res.status(201).json({
-      data: {
-        items: cartItems,
-        totalItems: cartItems.reduce((sum, item) => sum + item.quantity, 0),
-        subtotal,
-        shipping,
-        tax,
-        total,
-      },
+      data: cartSummary,
       success: true,
     });
   } catch (error) {
@@ -220,7 +259,7 @@ export const updateCartItem = async (req: AuthRequest, res: Response) => {
     // Check if cart item belongs to user
     const [cartItemRows] = await pool.query<RowDataPacket[]>(
       "SELECT ci._id, ci.product_id, p.stock FROM cart_items ci JOIN products p ON ci.product_id = p._id WHERE ci._id = ? AND ci.user_id = ?",
-      [id, req.user_id]
+      [id, req.user_id],
     );
     if (cartItemRows.length === 0) {
       return res.status(404).json({ error: "Cart item not found" });
@@ -245,13 +284,16 @@ export const updateCartItem = async (req: AuthRequest, res: Response) => {
        JOIN products p ON ci.product_id = p._id
        WHERE ci.user_id = ?
        ORDER BY ci.created_at DESC`,
-      [req.user_id]
+      [req.user_id],
     );
     const subtotal = allCartItems.reduce(
       (sum, item) => sum + (item.product_price ?? 0) * item.quantity,
-      0
+      0,
     );
-    const shipping = subtotal > 0 ? (subtotal > 100 ? 0 : 10) : 0;
+    let shipping = 0;
+    if (subtotal > 0) {
+      shipping = subtotal > 100 ? 0 : 10;
+    }
     const tax = subtotal * 0.08;
     const total = subtotal + shipping + tax;
     res.json({
@@ -267,6 +309,7 @@ export const updateCartItem = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
   }
 };
 
@@ -279,7 +322,7 @@ export const removeFromCart = async (req: AuthRequest, res: Response) => {
     // First check if the cart item exists
     const [checkItems] = await pool.query<RowDataPacket[]>(
       "SELECT _id, user_id FROM cart_items WHERE _id = ?",
-      [id]
+      [id],
     );
     if (checkItems.length === 0) {
       return res.status(404).json({ error: "Cart item not found" });
@@ -287,10 +330,9 @@ export const removeFromCart = async (req: AuthRequest, res: Response) => {
     if (checkItems[0].user_id !== req.user_id) {
       return res.status(403).json({ error: "Unauthorized" });
     }
-    const [result] = await pool.query<ResultSetHeader>(
-      "DELETE FROM cart_items WHERE _id = ?",
-      [id]
-    );
+    await pool.query<ResultSetHeader>("DELETE FROM cart_items WHERE _id = ?", [
+      id,
+    ]);
 
     // After remove, return the full cart as an object
     const [allCartItems] = await pool.query<RowDataPacket[]>(
@@ -301,13 +343,16 @@ export const removeFromCart = async (req: AuthRequest, res: Response) => {
        JOIN products p ON ci.product_id = p._id
        WHERE ci.user_id = ?
        ORDER BY ci.created_at DESC`,
-      [req.user_id]
+      [req.user_id],
     );
     const subtotal = allCartItems.reduce(
       (sum, item) => sum + (item.product_price ?? 0) * item.quantity,
-      0
+      0,
     );
-    const shipping = subtotal > 0 ? (subtotal > 100 ? 0 : 10) : 0;
+    let shipping = 0;
+    if (subtotal > 0) {
+      shipping = subtotal > 100 ? 0 : 10;
+    }
     const tax = subtotal * 0.08;
     const total = subtotal + shipping + tax;
     res.json({
@@ -323,6 +368,7 @@ export const removeFromCart = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
   }
 };
 
@@ -344,5 +390,6 @@ export const clearCart = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
   }
 };

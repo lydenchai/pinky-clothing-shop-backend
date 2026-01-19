@@ -8,8 +8,8 @@ export const getUserWishlist = async (req: AuthRequest, res: Response) => {
   try {
     let { page, limit } = req.query;
     // Pagination parameters
-    const currentPage = parseInt(page as string) || 1;
-    const itemsPerPage = parseInt(limit as string) || 15;
+    const currentPage = Number.parseInt(page as string) || 1;
+    const itemsPerPage = Number.parseInt(limit as string) || 15;
     const offset = (currentPage - 1) * itemsPerPage;
 
     const user_id = req.user_id;
@@ -18,7 +18,7 @@ export const getUserWishlist = async (req: AuthRequest, res: Response) => {
     // Total count
     const [countRows] = await pool.query(
       `SELECT COUNT(*) as total FROM wishlist WHERE user_id = ?`,
-      [user_id]
+      [user_id],
     );
     const total =
       Array.isArray(countRows) && (countRows as any)[0]
@@ -29,7 +29,7 @@ export const getUserWishlist = async (req: AuthRequest, res: Response) => {
        JOIN products ON wishlist.product_id = products._id
        WHERE wishlist.user_id = ?
        LIMIT ? OFFSET ?`,
-      [user_id, Number(itemsPerPage), Number(offset)]
+      [user_id, Number(itemsPerPage), Number(offset)],
     );
     res.json({
       success: true,
@@ -43,6 +43,7 @@ export const getUserWishlist = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch wishlist" });
+    console.error(error);
   }
 };
 
@@ -56,10 +57,10 @@ export const addProductToWishlist = async (req: AuthRequest, res: Response) => {
     if (!user_id) return res.status(401).json({ error: "Unauthorized" });
     if (!product_id)
       return res.status(400).json({ error: "Missing product_id" });
-    const [result] = await pool.query(
+    await pool.query(
       `INSERT INTO wishlist (_id, user_id, product_id) VALUES (?, ?, ?)
        ON DUPLICATE KEY UPDATE user_id = user_id`,
-      [_id, user_id, product_id]
+      [_id, user_id, product_id],
     );
     res.status(201).json({
       success: true,
@@ -75,7 +76,7 @@ export const addProductToWishlist = async (req: AuthRequest, res: Response) => {
 
 export const removeProductFromWishlist = async (
   req: AuthRequest,
-  res: Response
+  res: Response,
 ) => {
   try {
     const user_id = req.user_id;
@@ -85,7 +86,7 @@ export const removeProductFromWishlist = async (
       return res.status(400).json({ error: "Missing product_id" });
     await pool.query(
       `DELETE FROM wishlist WHERE user_id = ? AND product_id = ?`,
-      [user_id, product_id]
+      [user_id, product_id],
     );
     res.json({ success: true });
   } catch (error) {

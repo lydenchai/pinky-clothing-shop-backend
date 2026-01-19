@@ -384,7 +384,7 @@ function generateProducts(count: number = 100) {
         ];
       const description =
         descriptions[Math.floor(Math.random() * descriptions.length)];
-      const price = parseFloat((Math.random() * 150 + 20).toFixed(2)); // Random price between $20-$170
+      const price = Number.parseFloat((Math.random() * 150 + 20).toFixed(2)); // Random price between $20-$170
       const stock = Math.floor(Math.random() * 80) + 10; // Random stock between 10-90
 
       // Assign a unique image for each product by cycling through the image array
@@ -426,6 +426,97 @@ const seedUsers = [
   },
 ];
 
+async function seedUsersFn(connection: any) {
+  for (const user of seedUsers) {
+    const hashedPassword = await bcrypt.hash(user.password, 10);
+    await connection.query(
+      `INSERT INTO users (_id, email, password, first_name, last_name, address, city, postal_code, country, phone, role)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE email = email`,
+      [
+        user._id,
+        user.email,
+        hashedPassword,
+        user.first_name,
+        user.last_name,
+        user.address,
+        user.city,
+        user.postal_code,
+        user.country,
+        user.phone,
+        user.role,
+      ],
+    );
+  }
+}
+
+async function seedOrdersFn(connection: any) {
+  // Fetch all user IDs and product IDs
+  const [userRows] = await connection.query(`SELECT _id FROM users`);
+  const [productRows] = await connection.query(
+    `SELECT _id, price FROM products`,
+  );
+  if (userRows.length && productRows.length) {
+    const orderStatuses = ["pending", "delivered", "cancelled"];
+    const today = new Date();
+    for (let i = 0; i < 30; i++) {
+      // 30 orders, one per day
+      const user = userRows[Math.floor(Math.random() * userRows.length)];
+      // Pick 1-3 products per order (always at least 1)
+      const numProducts = Math.max(1, Math.floor(Math.random() * 3) + 1);
+      const orderItems = [];
+      let total = 0;
+      for (let j = 0; j < numProducts; j++) {
+        const prod =
+          productRows[Math.floor(Math.random() * productRows.length)];
+        const quantity = Math.floor(Math.random() * 3) + 1;
+        orderItems.push({
+          product_id: prod._id,
+          quantity,
+          price: prod.price,
+        });
+        total += prod.price * quantity;
+      }
+      total = Number.parseFloat(total.toFixed(2));
+      const status =
+        orderStatuses[Math.floor(Math.random() * orderStatuses.length)];
+      const created_at = new Date(today.getTime() - i * 24 * 60 * 60 * 1000); // spread over last 30 days
+      const orderId = generateObjectId();
+      const orderCode = generateCode(i, "O");
+      await connection.query(
+        `INSERT INTO orders (_id, code, user_id, total_amount, status, shipping_address, shipping_city, shipping_postal_code, shipping_country, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          orderId,
+          orderCode,
+          user._id,
+          total,
+          status,
+          user.address || "123 Main St",
+          user.city || "Phnom Penh",
+          user.postal_code || "12000",
+          user.country || "Cambodia",
+          created_at,
+        ],
+      );
+      // Insert order items
+      for (const item of orderItems) {
+        await connection.query(
+          `INSERT INTO order_items (_id, order_id, product_id, quantity, price) VALUES (?, ?, ?, ?, ?)`,
+          [
+            generateObjectId(),
+            orderId,
+            item.product_id,
+            item.quantity,
+            item.price,
+          ],
+        );
+      }
+    }
+    console.log("Sample orders seeded.");
+  }
+}
+
 export const seed = async () => {
   const connection = await pool.getConnection();
 
@@ -437,32 +528,12 @@ export const seed = async () => {
     console.log(`Generated ${seedProducts.length} products.`);
 
     // Seed users
-    for (const user of seedUsers) {
-      const hashedPassword = await bcrypt.hash(user.password, 10);
-      await connection.query<ResultSetHeader>(
-        `INSERT INTO users (_id, email, password, first_name, last_name, address, city, postal_code, country, phone, role)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE email = email`,
-        [
-          user._id,
-          user.email,
-          hashedPassword,
-          user.first_name,
-          user.last_name,
-          user.address,
-          user.city,
-          user.postal_code,
-          user.country,
-          user.phone,
-          user.role,
-        ]
-      );
-    }
+    await seedUsersFn(connection);
     console.log("Users seeded.");
 
     // Robust product code generation: get max code from DB
     const [maxCodeRows] = await connection.query<any[]>(
-      `SELECT code FROM products WHERE code LIKE 'P%' ORDER BY code DESC LIMIT 1`
+      `SELECT code FROM products WHERE code LIKE 'P%' ORDER BY code DESC LIMIT 1`,
     );
     let lastNumber = 0;
     if (maxCodeRows.length > 0) {
@@ -470,7 +541,7 @@ export const seed = async () => {
       // Extract numeric part: e.g., P26001 -> 001
       const match = lastCode.match(/^P\d{2}(\d{3})$/);
       if (match) {
-        lastNumber = parseInt(match[1], 10);
+        lastNumber = Number.parseInt(match[1], 10);
       }
     }
     for (let i = 0; i < seedProducts.length; i++) {
@@ -491,14 +562,14 @@ export const seed = async () => {
           product.stock,
           JSON.stringify(product.sizes),
           JSON.stringify(product.colors),
-        ]
+        ],
       );
     }
     console.log("Products seeded.");
 
     // Seed inventory for each product
     const [allProducts] = await connection.query<any[]>(
-      `SELECT _id FROM products`
+      `SELECT _id FROM products`,
     );
     for (let i = 0; i < allProducts.length; i++) {
       const invId = generateObjectId();
@@ -510,7 +581,7 @@ export const seed = async () => {
         `INSERT INTO inventory (_id, code, product_id, quantity, location)
          VALUES (?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE code=code`,
-        [invId, invCode, productId, quantity, location]
+        [invId, invCode, productId, quantity, location],
       );
     }
     console.log("Inventory seeded.");
@@ -519,75 +590,12 @@ export const seed = async () => {
     await connection.query(
       `INSERT INTO site_info (name, description, email, phone, store_logo, favicon, address, facebook, instagram, tik_tok, meta_description)
        VALUES ('Pinky Clothing Shop', 'A modern clothing shop for all your fashion needs.', 'info@pinkyshop.com', '+855 12 345 678', '/imgs/logo.png', '/imgs/favicon.png', '123 Fashion St, Phnom Penh, Cambodia', 'https://facebook.com/pinkyshop', 'https://instagram.com/pinkyshop', 'https://tiktok.com/@pinkyshop', 'Best fashion shop in Cambodia')
-       ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), email=VALUES(email), phone=VALUES(phone), store_logo=VALUES(store_logo), favicon=VALUES(favicon), address=VALUES(address), facebook=VALUES(facebook), instagram=VALUES(instagram), tik_tok=VALUES(tik_tok), meta_description=VALUES(meta_description)`
+       ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), email=VALUES(email), phone=VALUES(phone), store_logo=VALUES(store_logo), favicon=VALUES(favicon), address=VALUES(address), facebook=VALUES(facebook), instagram=VALUES(instagram), tik_tok=VALUES(tik_tok), meta_description=VALUES(meta_description)`,
     );
     console.log("Site info seeded.");
 
     // Seed sample orders
-    // Fetch all user IDs and product IDs
-    const [userRows] = await connection.query<any[]>(`SELECT _id FROM users`);
-    const [productRows] = await connection.query<any[]>(
-      `SELECT _id, price FROM products`
-    );
-    if (userRows.length && productRows.length) {
-      const orderStatuses = ["pending", "delivered", "cancelled"];
-      const today = new Date();
-      for (let i = 0; i < 30; i++) {
-        // 30 orders, one per day
-        const user = userRows[Math.floor(Math.random() * userRows.length)];
-        // Pick 1-3 products per order (always at least 1)
-        const numProducts = Math.max(1, Math.floor(Math.random() * 3) + 1);
-        const orderItems = [];
-        let total = 0;
-        for (let j = 0; j < numProducts; j++) {
-          const prod =
-            productRows[Math.floor(Math.random() * productRows.length)];
-          const quantity = Math.floor(Math.random() * 3) + 1;
-          orderItems.push({
-            product_id: prod._id,
-            quantity,
-            price: prod.price,
-          });
-          total += prod.price * quantity;
-        }
-        total = parseFloat(total.toFixed(2));
-        const status =
-          orderStatuses[Math.floor(Math.random() * orderStatuses.length)];
-        const created_at = new Date(today.getTime() - i * 24 * 60 * 60 * 1000); // spread over last 30 days
-        const orderId = generateObjectId();
-        const orderCode = generateCode(i, "O");
-        await connection.query<ResultSetHeader>(
-          `INSERT INTO orders (_id, code, user_id, total_amount, status, shipping_address, shipping_city, shipping_postal_code, shipping_country, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            orderId,
-            orderCode,
-            user._id,
-            total,
-            status,
-            user.address || "123 Main St",
-            user.city || "Phnom Penh",
-            user.postal_code || "12000",
-            user.country || "Cambodia",
-            created_at,
-          ]
-        );
-        // Insert order items
-        for (const item of orderItems) {
-          await connection.query<ResultSetHeader>(
-            `INSERT INTO order_items (_id, order_id, product_id, quantity, price) VALUES (?, ?, ?, ?, ?)`,
-            [
-              generateObjectId(),
-              orderId,
-              item.product_id,
-              item.quantity,
-              item.price,
-            ]
-          );
-        }
-      }
-      console.log("Sample orders seeded.");
-    }
+    await seedOrdersFn(connection);
   } catch (error) {
     console.error("Seed failed:", error);
     throw error;

@@ -18,53 +18,77 @@ export const productValidation = [
     .withMessage("Stock must be a non-negative integer"),
 ];
 
+// Helper to build filters for getAllProducts
+function buildProductFilters(queryObj: any) {
+  let { code, category, minPrice, maxPrice, search, inStock, q } = queryObj;
+  if (!search && q) search = q;
+
+  let query = "SELECT * FROM products WHERE 1=1";
+  const params: any[] = [];
+
+  if (
+    code &&
+    (typeof code === "string" || typeof code === "number") &&
+    code !== ""
+  ) {
+    query += " AND code LIKE ?";
+    params.push(`%${code}%`);
+  }
+  if (category) {
+    query += " AND LOWER(category) = LOWER(?)";
+    params.push(category);
+  }
+  if (minPrice) {
+    query += " AND price >= ?";
+    params.push(Number.parseFloat(minPrice as string));
+  }
+  if (maxPrice) {
+    query += " AND price <= ?";
+    params.push(Number.parseFloat(maxPrice as string));
+  }
+  if (search) {
+    let searchStr = "";
+    if (typeof search === "string" || typeof search === "number") {
+      searchStr = String(search);
+    }
+    const searchTerm = `%${searchStr}%`;
+    query += " AND (code LIKE ? OR name LIKE ?)";
+    params.push(searchTerm, searchTerm);
+  }
+  if (inStock === "true") {
+    query += " AND stock > 0";
+  }
+  return { query, params };
+}
+
+// Helper to parse array fields robustly
+function parseArrayField(field: any) {
+  if (Array.isArray(field)) return field;
+  if (typeof field === "string") {
+    try {
+      const parsed = JSON.parse(field);
+      if (Array.isArray(parsed)) return parsed;
+    } catch (e) {
+      console.error(e);
+      if (field.includes(",")) {
+        return field
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      }
+    }
+  }
+  return [];
+}
+
 export const getAllProducts = async (req: Request, res: Response) => {
   try {
-    let {
-      code,
-      category,
-      minPrice,
-      maxPrice,
-      search,
-      inStock,
-      page,
-      limit,
-      q,
-    } = req.query;
-    if (!search && q) search = q;
-
-    // Pagination parameters
-    const currentPage = parseInt(page as string) || 1;
-    const itemsPerPage = parseInt(limit as string) || 15;
+    const { page, limit } = req.query;
+    const currentPage = Number.parseInt(page as string) || 1;
+    const itemsPerPage = Number.parseInt(limit as string) || 15;
     const offset = (currentPage - 1) * itemsPerPage;
 
-    let query = "SELECT * FROM products WHERE 1=1";
-    const params: any[] = [];
-
-    if (code) {
-      query += " AND code LIKE ?";
-      params.push(`%${code}%`);
-    }
-    if (category) {
-      query += " AND LOWER(category) = LOWER(?)";
-      params.push(category);
-    }
-    if (minPrice) {
-      query += " AND price >= ?";
-      params.push(parseFloat(minPrice as string));
-    }
-    if (maxPrice) {
-      query += " AND price <= ?";
-      params.push(parseFloat(maxPrice as string));
-    }
-    if (search) {
-      query += " AND (code LIKE ? OR name LIKE ?)";
-      const searchTerm = `%${search}%`;
-      params.push(searchTerm, searchTerm);
-    }
-    if (inStock === "true") {
-      query += " AND stock > 0";
-    }
+    const { query, params } = buildProductFilters(req.query);
 
     // Get total count for pagination
     const countQuery = query.replace("SELECT *", "SELECT COUNT(*) as total");
@@ -73,36 +97,19 @@ export const getAllProducts = async (req: Request, res: Response) => {
     const totalPages = Math.ceil(totalItems / itemsPerPage);
 
     // Add pagination to query
-    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
-    params.push(itemsPerPage, offset);
+    const paginatedQuery = query + " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+    const paginatedParams = [...params, itemsPerPage, offset];
 
-    const [products] = await pool.query<RowDataPacket[]>(query, params);
+    const [products] = await pool.query<RowDataPacket[]>(
+      paginatedQuery,
+      paginatedParams,
+    );
 
-    // Ensure price is float and sizes/colors are arrays in response, robust to legacy/corrupt data
-    const parseArrayField = (field: any) => {
-      if (Array.isArray(field)) return field;
-      if (typeof field === "string") {
-        try {
-          // Try JSON.parse
-          const parsed = JSON.parse(field);
-          if (Array.isArray(parsed)) return parsed;
-        } catch (e) {
-          // Fallback: comma-split if looks like CSV
-          if (field.includes(",")) {
-            return field
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean);
-          }
-        }
-      }
-      return [];
-    };
     const productsWithParsedFields = products.map((p) => ({
       ...p,
       price:
         p.price !== undefined && p.price !== null
-          ? parseFloat(p.price)
+          ? Number.parseFloat(p.price)
           : p.price,
       sizes: parseArrayField(p.sizes),
       colors: parseArrayField(p.colors),
@@ -119,6 +126,7 @@ export const getAllProducts = async (req: Request, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
   }
 };
 
@@ -127,33 +135,18 @@ export const getProductById = async (req: Request, res: Response) => {
     const { id } = req.params;
     const [products] = await pool.query<RowDataPacket[]>(
       "SELECT * FROM products WHERE _id = ?",
-      [id]
+      [id],
     );
     if (products.length === 0) {
       return res.status(404).json({ data: null, message: "Product not found" });
     }
     // Ensure price is float and sizes/colors are arrays in response, robust to legacy/corrupt data
-    const parseArrayField = (field: any) => {
-      if (Array.isArray(field)) return field;
-      if (typeof field === "string") {
-        try {
-          const parsed = JSON.parse(field);
-          if (Array.isArray(parsed)) return parsed;
-        } catch (e) {
-          if (field.includes(",")) {
-            return field
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean);
-          }
-        }
-      }
-      return [];
-    };
+    // Use shared helper to avoid duplicate logic
+    // Use the shared parseArrayField helper
     const product = products[0];
     if (product) {
       if (product.price !== undefined && product.price !== null) {
-        product.price = parseFloat(product.price);
+        product.price = Number.parseFloat(product.price);
       }
       product.sizes = parseArrayField(product.sizes);
       product.colors = parseArrayField(product.colors);
@@ -161,6 +154,7 @@ export const getProductById = async (req: Request, res: Response) => {
     res.json({ success: true, data: product });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
   }
 };
 
@@ -186,9 +180,9 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
     if (
       !name ||
       !description ||
-      typeof price === "undefined" ||
+      price === undefined ||
       !category ||
-      typeof image === "undefined"
+      image === undefined
     ) {
       return res.status(400).json({
         error: "Missing required fields",
@@ -196,11 +190,10 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       });
     }
     const _id = req.body._id || generateObjectId();
-    const productCode =
-      code && code.trim() ? code.trim() : generateCode(0, "P");
+    const productCode = code.trim() ? code.trim() : generateCode(0, "P");
     // Ensure sizes and colors are never undefined
-    const safeSizes = typeof sizes === "undefined" ? null : sizes;
-    const safeColors = typeof colors === "undefined" ? null : colors;
+    const safeSizes = sizes === undefined ? null : sizes;
+    const safeColors = colors === undefined ? null : colors;
     try {
       const values = [
         _id,
@@ -218,7 +211,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       await pool.query<ResultSetHeader>(
         `INSERT INTO products (_id, code, name, description, price, category, image, stock, sizes, colors)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        values
+        values,
       );
     } catch (dbError) {
       console.error("DB Insert Error:", dbError);
@@ -229,30 +222,13 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
     try {
       const [products] = await pool.query<RowDataPacket[]>(
         "SELECT * FROM products WHERE _id = ?",
-        [_id]
+        [_id],
       );
       // Ensure price is float and sizes/colors are arrays in response, robust to legacy/corrupt data
-      const parseArrayField = (field: any) => {
-        if (Array.isArray(field)) return field;
-        if (typeof field === "string") {
-          try {
-            const parsed = JSON.parse(field);
-            if (Array.isArray(parsed)) return parsed;
-          } catch (e) {
-            if (field.includes(",")) {
-              return field
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean);
-            }
-          }
-        }
-        return [];
-      };
       const product = products[0];
       if (product) {
         if (product.price !== undefined && product.price !== null) {
-          product.price = parseFloat(product.price);
+          product.price = Number.parseFloat(product.price);
         }
         product.sizes = parseArrayField(product.sizes);
         product.colors = parseArrayField(product.colors);
@@ -299,37 +275,20 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
         sizes || null,
         colors || null,
         id,
-      ]
+      ],
     );
     if (result.affectedRows === 0) {
       return res.status(404).json({ data: null, message: "Product not found" });
     }
     const [products] = await pool.query<RowDataPacket[]>(
       "SELECT * FROM products WHERE _id = ?",
-      [id]
+      [id],
     );
     // Ensure price is float and sizes/colors are arrays in response, robust to legacy/corrupt data
-    const parseArrayField = (field: any) => {
-      if (Array.isArray(field)) return field;
-      if (typeof field === "string") {
-        try {
-          const parsed = JSON.parse(field);
-          if (Array.isArray(parsed)) return parsed;
-        } catch (e) {
-          if (field.includes(",")) {
-            return field
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean);
-          }
-        }
-      }
-      return [];
-    };
     const product = products[0];
     if (product) {
       if (product.price !== undefined && product.price !== null) {
-        product.price = parseFloat(product.price);
+        product.price = Number.parseFloat(product.price);
       }
       product.sizes = parseArrayField(product.sizes);
       product.colors = parseArrayField(product.colors);
@@ -337,6 +296,7 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
     res.json({ data: product, success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
   }
 };
 
@@ -345,7 +305,7 @@ export const deleteProduct = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const [result] = await pool.query<ResultSetHeader>(
       "DELETE FROM products WHERE _id = ?",
-      [id]
+      [id],
     );
     if (result.affectedRows === 0) {
       return res.status(404).json({ data: null, message: "Product not found" });
@@ -353,17 +313,19 @@ export const deleteProduct = async (req: AuthRequest, res: Response) => {
     res.json({ data: null, message: "Product deleted successfully" });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
   }
 };
 
 export const getCategories = async (req: Request, res: Response) => {
   try {
     const [categories] = await pool.query<RowDataPacket[]>(
-      "SELECT DISTINCT category FROM products ORDER BY category"
+      "SELECT DISTINCT category FROM products ORDER BY category",
     );
 
     res.json({ data: categories.map((c) => c.category), success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
   }
 };

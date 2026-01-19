@@ -10,8 +10,8 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
     if (!search && q) search = q;
 
     // Pagination parameters
-    const currentPage = parseInt(page as string) || 1;
-    const itemsPerPage = parseInt(limit as string) || 15;
+    const currentPage = Number.parseInt(page as string) || 1;
+    const itemsPerPage = Number.parseInt(limit as string) || 15;
     const offset = (currentPage - 1) * itemsPerPage;
 
     let query =
@@ -20,14 +20,24 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
 
     if (search) {
       query += " AND (email LIKE ? OR first_name LIKE ? OR last_name LIKE ?)";
-      const searchTerm = `%${search}%`;
+      let searchStr: string;
+      if (
+        typeof search === "string" ||
+        typeof search === "number" ||
+        typeof search === "boolean"
+      ) {
+        searchStr = String(search);
+      } else {
+        searchStr = "";
+      }
+      const searchTerm = `%${searchStr}%`;
       params.push(searchTerm, searchTerm, searchTerm);
     }
 
     // Get total count for pagination
     const countQuery = query.replace(
       "SELECT _id, email, first_name, last_name, address, city, country, phone, role, created_at",
-      "SELECT COUNT(*) as total"
+      "SELECT COUNT(*) as total",
     );
     const [countResult] = await pool.query<RowDataPacket[]>(countQuery, params);
     const totalItems = countResult[0].total;
@@ -51,6 +61,7 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ data: null, message: "error" });
+    console.error(error);
   }
 };
 
@@ -81,7 +92,7 @@ export const createUser = async (req: AuthRequest, res: Response) => {
     // 🔎 Check duplicate email
     const [existing] = await pool.query<RowDataPacket[]>(
       "SELECT _id FROM users WHERE email = ?",
-      [email.toLowerCase()]
+      [email.toLowerCase()],
     );
 
     if (existing.length > 0) {
@@ -93,7 +104,7 @@ export const createUser = async (req: AuthRequest, res: Response) => {
 
     // 🔐 Hash password
     const hashedPassword = await import("bcryptjs").then((bcrypt) =>
-      bcrypt.hash(password, 10)
+      bcrypt.hash(password, 10),
     );
 
     // 🆔 Mongo-style ObjectId
@@ -115,14 +126,14 @@ export const createUser = async (req: AuthRequest, res: Response) => {
         country || null,
         phone || null,
         userRole,
-      ]
+      ],
     );
 
     const [users] = await pool.query<RowDataPacket[]>(
       `SELECT _id, email, first_name, last_name, address, city,
               postal_code, country, phone, role, created_at
        FROM users WHERE _id = ?`,
-      [userId]
+      [userId],
     );
     res.status(201).json({ data: users[0], success: true });
   } catch (error) {
@@ -136,7 +147,7 @@ export const getUserById = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const [users] = await pool.query<RowDataPacket[]>(
       "SELECT _id, email, first_name, last_name, postal_code, address, city, country, phone, role, created_at FROM users WHERE _id = ?",
-      [id]
+      [id],
     );
     if (users.length === 0) {
       return res.status(404).json({ data: null, message: "User not found" });
@@ -144,6 +155,7 @@ export const getUserById = async (req: AuthRequest, res: Response) => {
     res.json({ data: users[0], success: true });
   } catch (error) {
     res.status(500).json({ data: null, message: "error" });
+    console.error(error);
   }
 };
 
@@ -160,6 +172,7 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
       "postal_code",
       "country",
       "phone",
+      "role",
     ];
 
     const fields: string[] = [];
@@ -183,7 +196,7 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
 
     const [result] = await pool.query<ResultSetHeader>(
       `UPDATE users SET ${fields.join(", ")} WHERE _id = ?`,
-      values
+      values,
     );
 
     if (result.affectedRows === 0) {
@@ -195,7 +208,7 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
       `SELECT _id, email, first_name, last_name, address, city, postal_code,
               country, phone, role, created_at
        FROM users WHERE _id = ?`,
-      [id]
+      [id],
     );
 
     res.json({
@@ -214,7 +227,7 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
 
     const [result] = await pool.query<ResultSetHeader>(
       "DELETE FROM users WHERE _id = ?",
-      [id]
+      [id],
     );
 
     if (result.affectedRows === 0) {
@@ -223,6 +236,7 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
     res.json({ data: null, success: true });
   } catch (error) {
     res.status(500).json({ data: null, message: "error" });
+    console.error(error);
   }
 };
 
@@ -235,7 +249,7 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
     }
     const [result] = await pool.query<ResultSetHeader>(
       "UPDATE users SET role = ? WHERE _id = ?",
-      [role, id]
+      [role, id],
     );
     if (result.affectedRows === 0) {
       return res.status(404).json({ data: null, message: "User not found" });
@@ -243,5 +257,6 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
     res.json({ data: null, success: true });
   } catch (error) {
     res.status(500).json({ data: null, message: "error" });
+    console.error(error);
   }
 };

@@ -6,11 +6,12 @@ import { RowDataPacket } from "mysql2";
 export const getSiteInfo = async (req: AuthRequest, res: Response) => {
   try {
     const [info] = await pool.query<RowDataPacket[]>(
-      `SELECT * FROM site_info LIMIT 1`
+      `SELECT * FROM site_info LIMIT 1`,
     );
     res.json({ success: true, data: info[0] });
   } catch (err) {
     res.status(500).json({ success: false, error: "Failed to get site info" });
+    console.error(err);
   }
 };
 
@@ -18,7 +19,7 @@ export const updateSiteInfo = async (req: AuthRequest, res: Response) => {
   try {
     await pool.query(`UPDATE site_info SET ?`, [req.body]);
     const [info] = await pool.query<RowDataPacket[]>(
-      `SELECT * FROM site_info LIMIT 1`
+      `SELECT * FROM site_info LIMIT 1`,
     );
     res.json({ success: true, data: info[0] });
   } catch (err) {

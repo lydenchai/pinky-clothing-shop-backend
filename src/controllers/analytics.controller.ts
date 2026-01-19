@@ -6,7 +6,7 @@ export const logAnalyticsEvent = async (req: Request, res: Response) => {
     const { type, user_id, data } = req.body;
     await pool.query(
       "INSERT INTO analytics (type, user_id, data) VALUES (?, ?, ?)",
-      [type, user_id || null, data ? JSON.stringify(data) : null]
+      [type, user_id || null, data ? JSON.stringify(data) : null],
     );
     res.status(201).json({ data: null, success: true });
   } catch (err) {
@@ -19,7 +19,7 @@ export const logAnalyticsEvent = async (req: Request, res: Response) => {
 export const getAnalytics = async (req: Request, res: Response) => {
   try {
     const [rows] = await pool.query(
-      "SELECT * FROM analytics ORDER BY created_at DESC LIMIT 100"
+      "SELECT * FROM analytics ORDER BY created_at DESC LIMIT 100",
     );
     res.json({ data: rows, success: true });
   } catch (err) {
@@ -32,25 +32,25 @@ export const getAnalyticsSummary = async (req: Request, res: Response) => {
   try {
     // Total sales (sum of all order totals for placed orders)
     const [salesRows] = await pool.query<any[]>(
-      "SELECT SUM(total_amount) as totalSales FROM orders WHERE status IN ('pending','processing','shipped','delivered')"
+      "SELECT SUM(total_amount) as totalSales FROM orders WHERE status IN ('pending','processing','shipped','delivered')",
     );
     const totalSales = salesRows[0]?.totalSales || 0;
 
     // Total orders (only placed orders, not cancelled)
     const [orderRows] = await pool.query<any[]>(
-      "SELECT COUNT(*) as totalOrders FROM orders WHERE status IN ('pending','processing','shipped','delivered')"
+      "SELECT COUNT(*) as totalOrders FROM orders WHERE status IN ('pending','processing','shipped','delivered')",
     );
     const totalOrders = orderRows[0]?.totalOrders || 0;
 
     // Total users
     const [userRows] = await pool.query<any[]>(
-      "SELECT COUNT(*) as totalUsers FROM users"
+      "SELECT COUNT(*) as totalUsers FROM users",
     );
     const totalUsers = userRows[0]?.totalUsers || 0;
 
     // Total products
     const [productRows] = await pool.query<any[]>(
-      "SELECT COUNT(*) as totalProducts FROM products"
+      "SELECT COUNT(*) as totalProducts FROM products",
     );
     const totalProducts = productRows[0]?.totalProducts || 0;
 
@@ -61,7 +61,7 @@ export const getAnalyticsSummary = async (req: Request, res: Response) => {
        WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
        GROUP BY DATE(created_at)
        HAVING sales > 0
-       ORDER BY date ASC`
+       ORDER BY date ASC`,
     );
 
     res.json({

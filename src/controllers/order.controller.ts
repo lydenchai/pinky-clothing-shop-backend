@@ -27,34 +27,87 @@ export const orderValidation = [
 ];
 
 // Get all orders for admin
+// Helper to build filter clause and params
+function buildOrderFilterClause(query: any) {
+  let { code, search, q } = query;
+  if (!search && q) search = q;
+  let filterClause = "";
+  let filterParams: any[] = [];
+  if (code) {
+    if (typeof code === "string") {
+      filterClause += (filterClause ? " AND" : " WHERE") + " o.code LIKE ?";
+      filterParams.push(`%${String(code)}%`);
+    } else if (Array.isArray(code)) {
+      const codeFilters = code.map(() => "o.code LIKE ?").join(" OR ");
+      filterClause +=
+        (filterClause ? " AND (" : " WHERE (") + codeFilters + ")";
+      filterParams.push(...code.map((c: string) => `%${c}%`));
+    }
+  }
+  if (search) {
+    filterClause +=
+      (filterClause ? " AND" : " WHERE") +
+      " (o.code LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)";
+    const s = `%${search}%`;
+    filterParams.push(s, s, s);
+  }
+  return { filterClause, filterParams };
+}
+
+// Helper to map order rows
+function mapOrderRows(rows: RowDataPacket[]) {
+  const map: Record<string, any> = {};
+  rows.forEach((row) => {
+    if (!map[row.order_id]) {
+      map[row.order_id] = {
+        _id: row.order_id,
+        code: row.code,
+        user_id: row.user_id,
+        user_email: row.user_email,
+        user_first_name: row.user_first_name,
+        user_last_name: row.user_last_name,
+        total_amount: row.total_amount,
+        status: row.status,
+        shipping_address: row.shipping_address,
+        shipping_city: row.shipping_city,
+        shipping_postal_code: row.shipping_postal_code,
+        shipping_country: row.shipping_country,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        items: [],
+      };
+    }
+    if (row.item_id) {
+      map[row.order_id].items.push({
+        _id: row.item_id,
+        code: row.code,
+        product_id: row.product_id,
+        quantity: row.quantity,
+        price: row.price,
+        size: row.size,
+        color: row.color,
+        product_name: row.product_name,
+        product_image: row.product_image,
+      });
+    }
+  });
+  return Object.values(map);
+}
+
 export const getAllOrders = async (req: AuthRequest, res: Response) => {
   try {
-    let { code, page, limit, search, q } = req.query;
-    if (!search && q) search = q;
-
-    // Pagination parameters
-    const currentPage = parseInt(page as string) || 1;
-    const itemsPerPage = parseInt(limit as string) || 15;
+    let { page, limit } = req.query;
+    const currentPage = Number.parseInt(page as string) || 1;
+    const itemsPerPage = Number.parseInt(limit as string) || 15;
     const offset = (currentPage - 1) * itemsPerPage;
 
     // Build filter clause
-    let filterClause = "";
-    let filterParams: any[] = [];
-    if (code) {
-      filterClause += (filterClause ? " AND" : " WHERE") + " o.code LIKE ?";
-      filterParams.push(`%${code}%`);
-    }
-    if (search) {
-      filterClause +=
-        (filterClause ? " AND" : " WHERE") +
-        " (o.code LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)";
-      const s = `%${search}%`;
-      filterParams.push(s, s, s);
-    }
+    const { filterClause, filterParams } = buildOrderFilterClause(req.query);
+
     // Total orders
     const [countRows] = await pool.query<RowDataPacket[]>(
       `SELECT COUNT(*) as total FROM orders o LEFT JOIN users u ON o.user_id = u._id${filterClause}`,
-      filterParams
+      filterParams,
     );
     const total = (countRows[0] as any)?.total || 0;
 
@@ -71,49 +124,14 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
        ${filterClause}
        ORDER BY o.updated_at DESC, o._id DESC
        LIMIT ? OFFSET ?`,
-      [...filterParams, limit, offset]
+      [...filterParams, limit, offset],
     );
 
-    const map: Record<string, any> = {};
-    rows.forEach((row) => {
-      if (!map[row.order_id]) {
-        map[row.order_id] = {
-          _id: row.order_id,
-          code: row.code,
-          user_id: row.user_id,
-          user_email: row.user_email,
-          user_first_name: row.user_first_name,
-          user_last_name: row.user_last_name,
-          total_amount: row.total_amount,
-          status: row.status,
-          shipping_address: row.shipping_address,
-          shipping_city: row.shipping_city,
-          shipping_postal_code: row.shipping_postal_code,
-          shipping_country: row.shipping_country,
-          created_at: row.created_at,
-          updated_at: row.updated_at,
-          items: [],
-        };
-      }
-
-      if (row.item_id) {
-        map[row.order_id].items.push({
-          _id: row.item_id,
-          code: row.code,
-          product_id: row.product_id,
-          quantity: row.quantity,
-          price: row.price,
-          size: row.size,
-          color: row.color,
-          product_name: row.product_name,
-          product_image: row.product_image,
-        });
-      }
-    });
+    const data = mapOrderRows(rows);
 
     res.json({
       success: true,
-      data: Object.values(map),
+      data,
       pagination: {
         page: currentPage,
         limit: itemsPerPage,
@@ -155,10 +173,9 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     // Generate _id for order
     const order_id = req.body._id || generateObjectId();
     // Generate or use provided code
-    const order_code =
-      req.body.code && req.body.code.trim()
-        ? req.body.code.trim()
-        : generateCode(0, "O");
+    const order_code = req.body.code.trim()
+      ? req.body.code.trim()
+      : generateCode(0, "O");
 
     await connection.beginTransaction();
     transactionStarted = true;
@@ -171,7 +188,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
        JOIN products p ON ci.product_id = p._id
        WHERE ci.user_id = ?
        FOR UPDATE`,
-      [req.user_id]
+      [req.user_id ?? ""],
     );
 
     if (!cart_items.length) {
@@ -202,7 +219,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       `INSERT INTO orders
        (_id, code, user_id, total_amount, status, shipping_address, shipping_city, shipping_postal_code, shipping_country)
        VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
-      orderValues
+      orderValues,
     );
 
     /* ---------- INSERT ITEMS + UPDATE STOCK ---------- */
@@ -221,14 +238,14 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           item.price,
           item.size || null,
           item.color || null,
-        ]
+        ],
       );
 
       await connection.query(
         `UPDATE products
          SET stock = stock - ?
          WHERE _id = ?`,
-        [item.quantity, item.product_id]
+        [item.quantity, item.product_id],
       );
     }
 
@@ -247,7 +264,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
        LEFT JOIN order_items oi ON o._id = oi.order_id
        LEFT JOIN products p ON oi.product_id = p._id
        WHERE o._id = ?`,
-      [order_id]
+      [order_id],
     );
 
     const order = {
@@ -289,48 +306,130 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 };
 
 /* ---------------------------- GET ORDERS ---------------------------- */
+
+// Helper to build filter clause for getOrders
+function buildGetOrdersFilterClause(
+  query: any,
+  isAdmin: boolean,
+  userId: string,
+) {
+  let { code, search, q } = query;
+  if (!search && q) search = q;
+  let filterClause = "";
+  let filterParams: any[] = [];
+
+  // Helper for user filter
+  function addUserFilter() {
+    filterClause += (filterClause ? " AND" : " WHERE") + " o.user_id = ?";
+    filterParams.push(userId);
+  }
+
+  // Helper for code filter
+  function addCodeFilter(code: any) {
+    if (typeof code === "string") {
+      filterClause += (filterClause ? " AND" : " WHERE") + " o.code LIKE ?";
+      filterParams.push(`%${code}%`);
+    } else if (Array.isArray(code)) {
+      const codeFilters = code.map(() => "o.code LIKE ?").join(" OR ");
+      filterClause +=
+        (filterClause ? " AND (" : " WHERE (") + codeFilters + ")";
+      filterParams.push(...code.map((c: string) => `%${String(c)}%`));
+    }
+  }
+
+  // Helper for search filter
+  function addSearchFilter(search: string) {
+    filterClause +=
+      (filterClause ? " AND" : " WHERE") +
+      " (o.code LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)";
+    const s = `%${String(search)}%`;
+    filterParams.push(s, s, s);
+  }
+
+  if (!isAdmin) {
+    addUserFilter();
+  }
+  if (code) {
+    addCodeFilter(code);
+  }
+  if (search) {
+    addSearchFilter(search);
+  }
+  return { filterClause, filterParams };
+}
+
+// Helper to map order rows for getOrders
+function mapGetOrdersRows(rows: RowDataPacket[]) {
+  const map: Record<string, any> = {};
+  rows.forEach((row) => {
+    if (!map[row.order_id]) {
+      map[row.order_id] = {
+        _id: row.order_id,
+        code: row.code,
+        user: {
+          _id: row.user_id,
+          email: row.user_email,
+          first_name: row.user_first_name,
+          last_name: row.user_last_name,
+        },
+        total_amount: row.total_amount,
+        status: row.status,
+        shipping_address: row.shipping_address,
+        shipping_city: row.shipping_city,
+        shipping_postal_code: row.shipping_postal_code,
+        shipping_country: row.shipping_country,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        items: [],
+      };
+    }
+    if (row.item_id) {
+      map[row.order_id].items.push({
+        _id: row.item_id,
+        product_id: row.product_id,
+        quantity: row.quantity,
+        price: row.price,
+        size: row.size,
+        color: row.color,
+        product_name: row.product_name,
+        product_image: row.product_image,
+      });
+    }
+  });
+  return Object.values(map);
+}
+
 export const getOrders = async (req: AuthRequest, res: Response) => {
   try {
     // Check if user is admin
     const [userRows] = await pool.query<RowDataPacket[]>(
       "SELECT role FROM users WHERE _id = ?",
-      [req.user_id]
+      [req.user_id],
     );
-    const isAdmin = userRows.length && userRows[0].role === "admin";
+    const isAdmin = Boolean(userRows.length && userRows[0].role === "admin");
 
     // Build filter clause
-    let filterClause = "";
-    let filterParams: any[] = [];
-    let { code, search, q } = req.query;
-    if (!search && q) search = q;
-    if (!isAdmin) {
-      filterClause += (filterClause ? " AND" : " WHERE") + " o.user_id = ?";
-      filterParams.push(req.user_id);
-    }
-    if (code) {
-      filterClause += (filterClause ? " AND" : " WHERE") + " o.code LIKE ?";
-      filterParams.push(`%${code}%`);
-    }
-    if (search) {
-      filterClause +=
-        (filterClause ? " AND" : " WHERE") +
-        " (o.code LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)";
-      const s = `%${search}%`;
-      filterParams.push(s, s, s);
-    }
+    const { filterClause, filterParams } = buildGetOrdersFilterClause(
+      req.query,
+      isAdmin,
+      req.user_id ?? "",
+    );
+
     // Pagination
-    const page = parseInt((req.query.page as string) || "1", 10);
-    const limit = parseInt((req.query.limit as string) || "15", 10);
+    const page = Number.parseInt((req.query.page as string) || "1", 10);
+    const limit = Number.parseInt((req.query.limit as string) || "15", 10);
     const offset = (page - 1) * limit;
+
     // Count total with same filter
     let countQuery =
       "SELECT COUNT(DISTINCT o._id) AS total FROM orders o LEFT JOIN users u ON o.user_id = u._id" +
       filterClause;
     const [countRows] = await pool.query<RowDataPacket[]>(
       countQuery,
-      filterParams
+      filterParams,
     );
     const total = (countRows[0] as any)?.total || 0;
+
     // Orders query
     let query = `SELECT o._id AS order_id, o.*, 
                         oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
@@ -349,47 +448,11 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
     ]);
 
     // Map orders
-    const map: Record<string, any> = {};
-    rows.forEach((row) => {
-      if (!map[row.order_id]) {
-        map[row.order_id] = {
-          _id: row.order_id,
-          code: row.code,
-          user: {
-            _id: row.user_id,
-            email: row.user_email,
-            first_name: row.user_first_name,
-            last_name: row.user_last_name,
-          },
-          total_amount: row.total_amount,
-          status: row.status,
-          shipping_address: row.shipping_address,
-          shipping_city: row.shipping_city,
-          shipping_postal_code: row.shipping_postal_code,
-          shipping_country: row.shipping_country,
-          created_at: row.created_at,
-          updated_at: row.updated_at,
-          items: [],
-        };
-      }
-
-      if (row.item_id) {
-        map[row.order_id].items.push({
-          _id: row.item_id,
-          product_id: row.product_id,
-          quantity: row.quantity,
-          price: row.price,
-          size: row.size,
-          color: row.color,
-          product_name: row.product_name,
-          product_image: row.product_image,
-        });
-      }
-    });
+    const orders = mapGetOrdersRows(rows);
 
     res.json({
       success: true,
-      data: Object.values(map),
+      data: orders,
       pagination: {
         page: page,
         limit: limit,
@@ -411,7 +474,7 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
     // Check if user is admin
     const [userRows] = await pool.query<RowDataPacket[]>(
       "SELECT role FROM users WHERE _id = ?",
-      [req.user_id]
+      [req.user_id],
     );
     const isAdmin = userRows.length && userRows[0].role === "admin";
 
@@ -498,7 +561,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     // Determine if the requester is an admin. Admins may update any order.
     const [userRows] = await pool.query<RowDataPacket[]>(
       "SELECT role FROM users WHERE _id = ?",
-      [req.user_id]
+      [req.user_id],
     );
     const isAdmin = userRows.length && userRows[0].role === "admin";
 
@@ -526,7 +589,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
          LEFT JOIN order_items oi ON o._id = oi.order_id
          LEFT JOIN products p ON oi.product_id = p._id
          WHERE o._id = ?`,
-      [id]
+      [id],
     );
     if (!rows.length) return res.status(404).json({ error: "Order not found" });
     const order: any = {
@@ -595,7 +658,7 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
          FROM cart_items ci
          JOIN products p ON ci.product_id = p._id
          WHERE ci.user_id = ?`,
-      [req.user_id]
+      [req.user_id ?? ""],
     );
     if (cart_items.length === 0) {
       return res.status(400).json({ error: "Cart is empty" });
@@ -665,7 +728,7 @@ export const getOrderSummary = async (req: AuthRequest, res: Response) => {
        FROM cart_items ci
        JOIN products p ON ci.product_id = p._id
        WHERE ci.user_id = ?`,
-      [req.user_id]
+      [req.user_id ?? ""],
     );
     if (cart_items.length === 0) {
       return res.status(400).json({ error: "Cart is empty" });
@@ -693,6 +756,7 @@ export const getOrderSummary = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ error: "Failed to prepare order summary" });
+    console.error(error);
   }
 };
 
@@ -700,14 +764,14 @@ export const getOrderSummary = async (req: AuthRequest, res: Response) => {
 export const getUserOrders = async (req: AuthRequest, res: Response) => {
   try {
     // Pagination
-    const page = parseInt((req.query.page as string) || "1", 10);
-    const limit = parseInt((req.query.limit as string) || "15", 10);
+    const page = Number.parseInt((req.query.page as string) || "1", 10);
+    const limit = Number.parseInt((req.query.limit as string) || "15", 10);
     const offset = (page - 1) * limit;
 
     // Count total
     const [countRows] = await pool.query<RowDataPacket[]>(
       "SELECT COUNT(DISTINCT o._id) AS total FROM orders o WHERE o.user_id = ?",
-      [req.user_id]
+      [req.user_id ?? ""],
     );
     const total = (countRows[0] as any)?.total || 0;
 
@@ -724,7 +788,7 @@ export const getUserOrders = async (req: AuthRequest, res: Response) => {
        WHERE o.user_id = ?
        ORDER BY o.updated_at DESC, o._id DESC
        LIMIT ? OFFSET ?`,
-      [req.user_id, limit, offset]
+      [req.user_id ?? "", limit, offset],
     );
 
     // Map orders

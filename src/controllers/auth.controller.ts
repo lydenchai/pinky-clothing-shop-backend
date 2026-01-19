@@ -45,7 +45,7 @@ export const register = async (req: Request, res: Response) => {
     // Check if user already exists
     const [existingUsers] = await pool.query<RowDataPacket[]>(
       "SELECT _id FROM users WHERE email = ?",
-      [email]
+      [email],
     );
 
     if (existingUsers.length > 0) {
@@ -58,7 +58,7 @@ export const register = async (req: Request, res: Response) => {
     // Create user
     // Generate MongoDB-style ObjectId for new user
     const newuser_id = generateObjectId();
-    const [result] = await pool.query<ResultSetHeader>(
+    await pool.query<ResultSetHeader>(
       `INSERT INTO users (_id, email, password, first_name, last_name, address, city, postal_code, country, phone, role)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'customer')`,
       [
@@ -72,7 +72,7 @@ export const register = async (req: Request, res: Response) => {
         postal_code || null,
         country || null,
         phone || null,
-      ]
+      ],
     );
 
     // Generate token
@@ -83,7 +83,7 @@ export const register = async (req: Request, res: Response) => {
     // Get created user
     const [users] = await pool.query<RowDataPacket[]>(
       "SELECT _id, email, first_name, last_name, address, city, postal_code, country, phone, role FROM users WHERE _id = ?",
-      [newuser_id]
+      [newuser_id],
     );
 
     const user = users[0] as UserResponse;
@@ -93,6 +93,7 @@ export const register = async (req: Request, res: Response) => {
     res
       .status(500)
       .json({ error: "Internal Server Error during registration" });
+    console.error(error);
   }
 };
 
@@ -110,7 +111,7 @@ export const login = async (req: Request, res: Response) => {
     // Find user
     const [users] = await pool.query<RowDataPacket[]>(
       "SELECT _id, email, password, first_name, last_name, address, city, postal_code, country, phone, role FROM users WHERE email = ?",
-      [email]
+      [email],
     );
 
     console.log("DB query returned user count:", (users as any[]).length);
@@ -161,7 +162,7 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
   try {
     const [users] = await pool.query<RowDataPacket[]>(
       "SELECT _id, email, first_name, last_name, address, city, postal_code, country, phone, role, created_at FROM users WHERE _id = ?",
-      [req.user_id]
+      [req.user_id],
     );
 
     if (users.length === 0) {
@@ -171,6 +172,7 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
     res.json({ data: users[0], success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
   }
 };
 
@@ -198,16 +200,17 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
         country || null,
         phone || null,
         req.user_id,
-      ]
+      ],
     );
 
     const [users] = await pool.query<RowDataPacket[]>(
       "SELECT _id, email, first_name, last_name, address, city, postal_code, country, phone, role FROM users WHERE _id = ?",
-      [req.user_id]
+      [req.user_id],
     );
 
     res.json({ data: users[0], success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
   }
 };

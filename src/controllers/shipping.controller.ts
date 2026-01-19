@@ -4,34 +4,46 @@ import { generateObjectId } from "../utils/objectid.util";
 import { generateCode } from "../utils/code.util";
 
 // Get all shippings with pagination and search
+function buildShippingSearchClause({ search, code, description, q }: any) {
+  let clause = "";
+  let params: any[] = [];
+  let effectiveSearch = search;
+  if (!effectiveSearch && q) effectiveSearch = q;
+  if (effectiveSearch) {
+    const searchStr =
+      typeof effectiveSearch === "string"
+        ? effectiveSearch
+        : String(effectiveSearch);
+    clause = " WHERE code LIKE ? OR name LIKE ? OR description LIKE ?";
+    const s = `%${searchStr}%`;
+    params = [s, s, s];
+  }
+  if (code) {
+    clause += clause ? " AND" : " WHERE";
+    clause += " code LIKE ?";
+    params.push(`%${code}%`);
+  }
+  if (description) {
+    clause += clause ? " AND" : " WHERE";
+    clause += " description LIKE ?";
+    params.push(`%${description}%`);
+  }
+  return { clause, params };
+}
+
 export const getAllShippings = async (req: Request, res: Response) => {
   try {
-    let { code,description, page, limit, search, q } = req.query;
-    if (!search && q) search = q;
-    const currentPage = parseInt(page as string) || 1;
-    const itemsPerPage = parseInt(limit as string) || 15;
+    const { code, description, page, limit, search, q } = req.query;
+    const currentPage = Number.parseInt(page as string) || 1;
+    const itemsPerPage = Number.parseInt(limit as string) || 15;
     const offset = (currentPage - 1) * itemsPerPage;
-    let searchClause = "";
-    let searchParams: any[] = [];
-    if (search) {
-      searchClause = " WHERE code LIKE ? OR name LIKE ? OR description LIKE ?";
-      const s = `%${search}%`;
-      searchParams = [s, s, s];
-    }
-    if (code) {
-      searchClause += searchClause ? " AND" : " WHERE";
-      searchClause += " code LIKE ?";
-      searchParams.push(`%${code}%`);
-    }
-    if (description) {
-      searchClause += searchClause ? " AND" : " WHERE";
-      searchClause += " description LIKE ?";
-      searchParams.push(`%${description}%`);
-    }
+    const { clause: searchClause, params: searchParams } =
+      buildShippingSearchClause({ search, code, description, q });
+
     // Total count
     const [countRows] = await pool.query(
       `SELECT COUNT(*) as total FROM shippings${searchClause}`,
-      searchParams
+      searchParams,
     );
     const total =
       Array.isArray(countRows) && (countRows as any)[0]
@@ -43,7 +55,7 @@ export const getAllShippings = async (req: Request, res: Response) => {
        ${searchClause}
        ORDER BY _id DESC
        LIMIT ? OFFSET ?`,
-      [...searchParams, Number(itemsPerPage), Number(offset)]
+      [...searchParams, Number(itemsPerPage), Number(offset)],
     );
     res.json({
       success: true,
@@ -123,9 +135,8 @@ export const createShipping = async (req: Request, res: Response) => {
     } = req.body;
     // Generate _id if not provided
     const _id = req.body._id || generateObjectId();
-    const shippingCode =
-      code && code.trim() ? code.trim() : generateCode(0, "S");
-    const [result] = await pool.query(
+    const shippingCode = code?.trim() ? code.trim() : generateCode(0, "S");
+    await pool.query(
       "INSERT INTO shippings (_id, code, name, description, country, price, min_order, max_order, estimated_days, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         _id,
@@ -138,7 +149,7 @@ export const createShipping = async (req: Request, res: Response) => {
         max_order,
         estimated_days,
         active,
-      ]
+      ],
     );
     const [rows] = await pool.query("SELECT * FROM shippings WHERE _id = ?", [
       _id,
@@ -176,7 +187,7 @@ export const updateShipping = async (req: Request, res: Response) => {
     // Return the updated row
     const [updatedRows] = await pool.query(
       "SELECT * FROM shippings WHERE _id = ?",
-      [req.params.id]
+      [req.params.id],
     );
     res.json({
       data: Array.isArray(updatedRows) ? updatedRows[0] : null,
@@ -186,6 +197,7 @@ export const updateShipping = async (req: Request, res: Response) => {
     res
       .status(400)
       .json({ success: false, error: "Failed to update shipping" });
+    console.error(error);
   }
 };
 
@@ -210,5 +222,6 @@ export const deleteShipping = async (req: Request, res: Response) => {
     res
       .status(400)
       .json({ success: false, error: "Failed to delete shipping" });
+    console.error(error);
   }
 };

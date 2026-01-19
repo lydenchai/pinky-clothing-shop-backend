@@ -4,36 +4,51 @@ import { RowDataPacket } from "mysql2";
 import { generateObjectId } from "../utils/objectid.util";
 import { generateCode } from "../utils/code.util";
 
+function buildInventorySearchClause(code: any, search: any, q: any) {
+  let searchClause = "";
+  let searchParams: any[] = [];
+  if (!search && q) search = q;
+  if (code) {
+    let codeStr: string | undefined;
+    if (typeof code === "string" || typeof code === "number") {
+      codeStr = String(code);
+    }
+    if (codeStr) {
+      searchClause +=
+        (searchClause ? " AND" : " WHERE") + " inventory.code LIKE ?";
+      searchParams.push(`%${codeStr}%`);
+    }
+  }
+  if (search) {
+    searchClause +=
+      (searchClause ? " AND" : " WHERE") +
+      " (inventory.code LIKE ? OR products.name LIKE ? OR inventory.location LIKE ?)";
+    const s = `%${search}%`;
+    searchParams.push(s, s, s);
+  }
+  return { searchClause, searchParams };
+}
+
 export const getAllInventory = async (req: Request, res: Response) => {
   try {
     let { code, page, limit, search, q } = req.query;
-    if (!search && q) search = q;
 
     // Pagination parameters
-    const currentPage = parseInt(page as string) || 1;
-    const itemsPerPage = parseInt(limit as string) || 15;
+    const currentPage = Number.parseInt(page as string) || 1;
+    const itemsPerPage = Number.parseInt(limit as string) || 15;
     const offset = (currentPage - 1) * itemsPerPage;
 
-    // Add search filter for code, product name, or location
-    let searchClause = "";
-    let searchParams: any[] = [];
-    if (code) {
-      searchClause +=
-        (searchClause ? " AND" : " WHERE") + " inventory.code LIKE ?";
-      searchParams.push(`%${code}%`);
-    }
-    if (search) {
-      searchClause +=
-        (searchClause ? " AND" : " WHERE") +
-        " (inventory.code LIKE ? OR products.name LIKE ? OR inventory.location LIKE ?)";
-      const s = `%${search}%`;
-      searchParams.push(s, s, s);
-    }
+    // Build search clause and params
+    const { searchClause, searchParams } = buildInventorySearchClause(
+      code,
+      search,
+      q,
+    );
 
     // Total count
     const [countRows] = await pool.query(
       `SELECT COUNT(*) as total FROM inventory LEFT JOIN products ON inventory.product_id = products._id${searchClause}`,
-      searchParams
+      searchParams,
     );
 
     const total =
@@ -48,7 +63,7 @@ export const getAllInventory = async (req: Request, res: Response) => {
        ${searchClause}
        ORDER BY inventory.updated_at DESC, inventory._id DESC
        LIMIT ? OFFSET ?`,
-      [...searchParams, Number(itemsPerPage), Number(offset)]
+      [...searchParams, Number(itemsPerPage), Number(offset)],
     );
 
     // Map rows to include product object
@@ -92,7 +107,7 @@ export const getInventoryById = async (req: Request, res: Response) => {
        FROM inventory
        LEFT JOIN products ON inventory.product_id = products._id
        WHERE inventory._id = ?`,
-      [req.params.id]
+      [req.params.id],
     );
 
     const item = rows[0];
@@ -130,15 +145,14 @@ export const createInventory = async (req: Request, res: Response) => {
     const { product_id, quantity, location, code } = req.body;
     // Generate _id if not provided
     const _id = req.body._id || generateObjectId();
-    const inventoryCode =
-      code && code.trim() ? code.trim() : generateCode(0, "I");
-    const [result] = await pool.query(
+    const inventoryCode = code?.trim() ? code.trim() : generateCode(0, "I");
+    await pool.query(
       "INSERT INTO inventory (_id, code, product_id, quantity, location) VALUES (?, ?, ?, ?, ?)",
-      [_id, inventoryCode, product_id, quantity, location]
+      [_id, inventoryCode, product_id, quantity, location],
     );
     const [rows] = await pool.query<RowDataPacket[]>(
       "SELECT * FROM inventory WHERE _id = ?",
-      [_id]
+      [_id],
     );
     const item = Array.isArray(rows) ? rows[0] : null;
     res.status(201).json({
@@ -170,15 +184,15 @@ export const updateInventory = async (req: Request, res: Response) => {
     // Build dynamic update fields
     const fields = [];
     const values = [];
-    if (typeof quantity !== "undefined") {
+    if (quantity !== undefined) {
       fields.push("quantity = ?");
       values.push(quantity);
     }
-    if (typeof location !== "undefined") {
+    if (location !== undefined) {
       fields.push("location = ?");
       values.push(location);
     }
-    if (typeof product_id !== "undefined") {
+    if (product_id !== undefined) {
       fields.push("product_id = ?");
       values.push(product_id);
     }
@@ -195,7 +209,7 @@ export const updateInventory = async (req: Request, res: Response) => {
 
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT * FROM inventory WHERE _id = ?`,
-      [_id]
+      [_id],
     );
     const item = Array.isArray(rows) ? rows[0] : null;
     res.json({
@@ -242,7 +256,7 @@ export const adjustStock = async (req: Request, res: Response) => {
     // Get current quantity
     const [rows] = (await pool.query(
       "SELECT quantity FROM inventory WHERE _id = ?",
-      [req.params.id]
+      [req.params.id],
     )) as [import("mysql2").RowDataPacket[], any];
     const item = Array.isArray(rows) ? rows[0] : null;
     if (!item) {
@@ -256,11 +270,11 @@ export const adjustStock = async (req: Request, res: Response) => {
     }
     await pool.query(
       "UPDATE inventory SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE _id = ?",
-      [newQuantity, req.params.id]
+      [newQuantity, req.params.id],
     );
     const [updatedRows] = await pool.query<RowDataPacket[]>(
       "SELECT * FROM inventory WHERE _id = ?",
-      [req.params.id]
+      [req.params.id],
     );
     const updated = Array.isArray(updatedRows) ? updatedRows[0] : null;
     res.json({

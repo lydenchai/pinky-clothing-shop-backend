@@ -18,6 +18,7 @@ export const testConnection = async () => {
     connection.release();
     return true;
   } catch (error) {
+    console.error(error);
     return false;
   }
 };

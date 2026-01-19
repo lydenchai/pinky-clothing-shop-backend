@@ -1,7 +1,7 @@
 export const adminOnly = (
   req: AuthRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   // Assume req.user_id is set by authenticate middleware
   // Query user role from database
@@ -16,7 +16,7 @@ export const adminOnly = (
         }
       })
       .catch(() =>
-        res.status(500).json({ error: "Failed to check admin role" })
+        res.status(500).json({ error: "Failed to check admin role" }),
       );
   });
 };
@@ -31,11 +31,11 @@ export interface AuthRequest extends Request {
 export const authenticate = (
   req: AuthRequest,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return res.status(401).json({ error: "No token provided" });
     }
     const token = authHeader.substring(7);
@@ -46,6 +46,7 @@ export const authenticate = (
 
     next();
   } catch (error) {
+    console.error(error);
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 };

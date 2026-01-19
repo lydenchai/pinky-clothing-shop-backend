@@ -17,6 +17,7 @@ import analyticsRoutes from "./routes/analytics.routes";
 import siteInfoRoutes from "./routes/site-info.routes";
 import shippingRoutes from "./routes/shipping.routes";
 import wishlistRoutes from "./routes/wishlist.routes";
+import paymentRoutes from "./routes/payment.routes";
 
 const app = express();
 
@@ -41,7 +42,7 @@ app.use(
     },
     credentials: true,
     exposedHeaders: ["Authorization"],
-  })
+  }),
 );
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
@@ -68,6 +69,7 @@ app.use("/api/analytics", analyticsRoutes);
 app.use("/api/site-info", siteInfoRoutes);
 app.use("/api/shippings", shippingRoutes);
 app.use("/api/wishlist", wishlistRoutes);
+app.use("/api/payments", paymentRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {
@@ -140,6 +142,7 @@ const startServer = async () => {
       `);
     });
   } catch (error) {
+    console.error("Failed to start server:", error);
     process.exit(1);
   }
 };

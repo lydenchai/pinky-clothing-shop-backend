@@ -63,6 +63,7 @@ export const initializeDatabase = async () => {
         description TEXT,
         price DECIMAL(10,2) NOT NULL,
         category VARCHAR(100) NOT NULL,
+        subcategory VARCHAR(100),
         image LONGTEXT,
         stock INT DEFAULT 0,
         sizes VARCHAR(255),
@@ -70,6 +71,7 @@ export const initializeDatabase = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_category (category),
+        INDEX idx_subcategory (subcategory),
         INDEX idx_price (price)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);

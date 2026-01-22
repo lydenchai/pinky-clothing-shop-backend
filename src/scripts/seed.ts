@@ -399,6 +399,7 @@ function generateProducts(count: number = 100) {
         }'s ${productType}`,
         price: price,
         category: demographic,
+        subcategory: productType,
         image: image,
         stock: stock,
         sizes: sizes[productType].split(","),
@@ -423,6 +424,32 @@ const seedUsers = [
     country: "Cambodia",
     phone: "+85512345678",
     role: "admin",
+  },
+  {
+    _id: generateObjectId(),
+    email: "lyden@example.com",
+    password: "password123",
+    first_name: "Lyden",
+    last_name: "Chai",
+    address: "123 Main Street",
+    city: "Phnom Penh",
+    postal_code: "12001",
+    country: "Cambodia",
+    phone: "+85512345678",
+    role: "customer",
+  },
+  {
+    _id: generateObjectId(),
+    email: "lusi@example.com",
+    password: "password123",
+    first_name: "Lusi",
+    last_name: "Zhao",
+    address: "123 Main Street",
+    city: "Phnom Penh",
+    postal_code: "12002",
+    country: "Cambodia",
+    phone: "+85512345678",
+    role: "customer",
   },
 ];
 
@@ -548,8 +575,8 @@ export const seed = async () => {
       const product = seedProducts[i];
       const code = generateCode(lastNumber + i, "P");
       await connection.query<ResultSetHeader>(
-        `INSERT INTO products (_id, code, name, description, price, category, image, stock, sizes, colors)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO products (_id, code, name, description, price, category, subcategory, image, stock, sizes, colors)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON DUPLICATE KEY UPDATE code=code`,
         [
           generateObjectId(),
@@ -558,6 +585,7 @@ export const seed = async () => {
           product.description,
           product.price,
           product.category,
+          product.subcategory,
           product.image,
           product.stock,
           JSON.stringify(product.sizes),

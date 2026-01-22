@@ -16,11 +16,13 @@ export const productValidation = [
   body("stock")
     .isInt({ min: 0 })
     .withMessage("Stock must be a non-negative integer"),
+  body("subcategory").optional().isString(),
 ];
 
 // Helper to build filters for getAllProducts
 function buildProductFilters(queryObj: any) {
-  let { code, category, minPrice, maxPrice, search, inStock, q } = queryObj;
+  let { code, category, subcategory, minPrice, maxPrice, search, inStock, q } =
+    queryObj;
   if (!search && q) search = q;
 
   let query = "SELECT * FROM products WHERE 1=1";
@@ -37,6 +39,10 @@ function buildProductFilters(queryObj: any) {
   if (category) {
     query += " AND LOWER(category) = LOWER(?)";
     params.push(category);
+  }
+  if (subcategory) {
+    query += " AND LOWER(subcategory) = LOWER(?)";
+    params.push(subcategory);
   }
   if (minPrice) {
     query += " AND price >= ?";
@@ -170,6 +176,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       description,
       price,
       category,
+      subcategory,
       image,
       stock,
       sizes,
@@ -190,7 +197,8 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       });
     }
     const _id = req.body._id || generateObjectId();
-    const productCode = code.trim() ? code.trim() : generateCode(0, "P");
+    const productCode =
+      code && code.trim() ? code.trim() : generateCode(0, "P");
     // Ensure sizes and colors are never undefined
     const safeSizes = sizes === undefined ? null : sizes;
     const safeColors = colors === undefined ? null : colors;
@@ -202,6 +210,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
         description,
         price,
         category,
+        subcategory || null,
         image,
         stock || 0,
         safeSizes,
@@ -209,8 +218,8 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       ];
       console.log("Product INSERT values:", values);
       await pool.query<ResultSetHeader>(
-        `INSERT INTO products (_id, code, name, description, price, category, image, stock, sizes, colors)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO products (_id, code, name, description, price, category, subcategory, image, stock, sizes, colors)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         values,
       );
     } catch (dbError) {
@@ -249,8 +258,17 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
 export const updateProduct = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    let { name, description, price, category, image, stock, sizes, colors } =
-      req.body;
+    let {
+      name,
+      description,
+      price,
+      category,
+      subcategory,
+      image,
+      stock,
+      sizes,
+      colors,
+    } = req.body;
     // If a file was uploaded, use its path for image
     if (req.file) {
       image = req.file.path;
@@ -263,13 +281,14 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
       colors = colors.join(",");
     }
     const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE products SET name = ?, description = ?, price = ?, category = ?, image = ?, stock = ?, sizes = ?, colors = ?
+      `UPDATE products SET name = ?, description = ?, price = ?, category = ?, subcategory = ?, image = ?, stock = ?, sizes = ?, colors = ?
        WHERE _id = ?`,
       [
         name,
         description,
         price,
         category,
+        subcategory || null,
         image,
         stock,
         sizes || null,

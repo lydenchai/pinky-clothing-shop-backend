@@ -67,6 +67,24 @@ function buildProductFilters(queryObj: any) {
   return { query, params };
 }
 
+// Helper to calculate discounted price
+function getDiscountedPrice(product: any) {
+  const now = new Date();
+  if (
+    product.discount_type &&
+    product.discount_value &&
+    (!product.discount_start || new Date(product.discount_start) <= now) &&
+    (!product.discount_end || new Date(product.discount_end) >= now)
+  ) {
+    if (product.discount_type === "percentage") {
+      return Math.max(0, product.price * (1 - product.discount_value / 100));
+    } else if (product.discount_type === "fixed") {
+      return Math.max(0, product.price - product.discount_value);
+    }
+  }
+  return product.price;
+}
+
 // Helper to parse array fields robustly
 function parseArrayField(field: any) {
   if (Array.isArray(field)) return field;
@@ -111,15 +129,21 @@ export const getAllProducts = async (req: Request, res: Response) => {
       paginatedParams,
     );
 
-    const productsWithParsedFields = products.map((p) => ({
-      ...p,
-      price:
+    const productsWithParsedFields = products.map((p) => {
+      const price =
         p.price !== undefined && p.price !== null
           ? Number.parseFloat(p.price)
-          : p.price,
-      sizes: parseArrayField(p.sizes),
-      colors: parseArrayField(p.colors),
-    }));
+          : p.price;
+      let discounted_price = getDiscountedPrice({ ...p, price });
+      discounted_price = Math.round(Number.parseFloat(discounted_price) * 100) / 100;
+      return {
+        ...p,
+        price,
+        discounted_price,
+        sizes: parseArrayField(p.sizes),
+        colors: parseArrayField(p.colors),
+      };
+    });
     res.json({
       success: true,
       data: productsWithParsedFields,
@@ -154,6 +178,11 @@ export const getProductById = async (req: Request, res: Response) => {
       if (product.price !== undefined && product.price !== null) {
         product.price = Number.parseFloat(product.price);
       }
+      let discounted_price = getDiscountedPrice(product);
+      if (discounted_price !== undefined && discounted_price !== null) {
+        discounted_price = Math.round(Number.parseFloat(discounted_price) * 100) / 100;
+      }
+      product.discounted_price = discounted_price;
       product.sizes = parseArrayField(product.sizes);
       product.colors = parseArrayField(product.colors);
     }
@@ -239,6 +268,11 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
         if (product.price !== undefined && product.price !== null) {
           product.price = Number.parseFloat(product.price);
         }
+        let discounted_price = getDiscountedPrice(product);
+        if (discounted_price !== undefined && discounted_price !== null) {
+          discounted_price = Math.round(Number.parseFloat(discounted_price) * 100) / 100;
+        }
+        product.discounted_price = discounted_price;
         product.sizes = parseArrayField(product.sizes);
         product.colors = parseArrayField(product.colors);
       }
@@ -262,6 +296,10 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
       name,
       description,
       price,
+      discount_type,
+      discount_value,
+      discount_start,
+      discount_end,
       category,
       subcategory,
       image,
@@ -269,6 +307,17 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
       sizes,
       colors,
     } = req.body;
+
+    // Convert discount_start and discount_end to MySQL DATETIME format if present
+    function toMySQLDatetime(val: any) {
+      if (!val) return null;
+      const d = new Date(val);
+      if (isNaN(d.getTime())) return null;
+      // YYYY-MM-DD HH:MM:SS
+      return d.toISOString().slice(0, 19).replace("T", " ");
+    }
+    discount_start = toMySQLDatetime(discount_start);
+    discount_end = toMySQLDatetime(discount_end);
     // If a file was uploaded, use its path for image
     if (req.file) {
       image = req.file.path;
@@ -281,12 +330,16 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
       colors = colors.join(",");
     }
     const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE products SET name = ?, description = ?, price = ?, category = ?, subcategory = ?, image = ?, stock = ?, sizes = ?, colors = ?
+      `UPDATE products SET name = ?, description = ?, price = ?, discount_type = ?, discount_value = ?, discount_start = ?, discount_end = ?, category = ?, subcategory = ?, image = ?, stock = ?, sizes = ?, colors = ?
        WHERE _id = ?`,
       [
         name,
         description,
         price,
+        discount_type || null,
+        discount_value || null,
+        discount_start || null,
+        discount_end || null,
         category,
         subcategory || null,
         image,
@@ -309,6 +362,11 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
       if (product.price !== undefined && product.price !== null) {
         product.price = Number.parseFloat(product.price);
       }
+      let discounted_price = getDiscountedPrice(product);
+      if (discounted_price !== undefined && discounted_price !== null) {
+        discounted_price = Math.round(Number.parseFloat(discounted_price) * 100) / 100;
+      }
+      product.discounted_price = discounted_price;
       product.sizes = parseArrayField(product.sizes);
       product.colors = parseArrayField(product.colors);
     }
@@ -354,7 +412,7 @@ export const getSubcategories = async (req: Request, res: Response) => {
     const [subcategories] = await pool.query<RowDataPacket[]>(
       "SELECT DISTINCT subcategory FROM products ORDER BY subcategory",
     );
-    
+
     res.json({ data: subcategories.map((c) => c.subcategory), success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });

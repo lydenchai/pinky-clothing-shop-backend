@@ -15,7 +15,7 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
     const offset = (currentPage - 1) * itemsPerPage;
 
     let query =
-      "SELECT _id, email, first_name, last_name, address, city, country, phone, role, created_at FROM users WHERE 1=1";
+      "SELECT _id, email, first_name, last_name, address, phone, role, created_at FROM users WHERE 1=1";
     const params: any[] = [];
 
     if (search) {
@@ -48,10 +48,25 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
     params.push(itemsPerPage, offset);
 
     const [users] = await pool.query<RowDataPacket[]>(query, params);
-
+    const usersWithAddress = users.map((user: any) => {
+      let addressObj = {};
+      try {
+        addressObj = user.address ? JSON.parse(user.address) : {};
+      } catch {}
+      return {
+        _id: user._id,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        address: addressObj,
+        phone: user.phone,
+        role: user.role,
+        created_at: user.created_at,
+      };
+    });
     res.json({
       success: true,
-      data: users,
+      data: usersWithAddress,
       pagination: {
         page: currentPage,
         limit: itemsPerPage,
@@ -73,12 +88,15 @@ export const createUser = async (req: AuthRequest, res: Response) => {
       first_name,
       last_name,
       address,
-      city,
-      postal_code,
-      country,
       phone,
       role,
     } = req.body;
+    let addressJson = null;
+    if (address && typeof address === 'object') {
+      addressJson = JSON.stringify(address);
+    } else if (typeof address === 'string') {
+      addressJson = address;
+    }
 
     if (!email || !password || !first_name || !last_name) {
       return res.status(400).json({
@@ -112,26 +130,22 @@ export const createUser = async (req: AuthRequest, res: Response) => {
 
     await pool.query<ResultSetHeader>(
       `INSERT INTO users
-       (_id, email, password, first_name, last_name, address, city, postal_code, country, phone, role)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (_id, email, password, first_name, last_name, address, phone, role)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
         email.toLowerCase(),
         hashedPassword,
         first_name,
         last_name,
-        address || null,
-        city || null,
-        postal_code || null,
-        country || null,
+        addressJson,
         phone || null,
         userRole,
       ],
     );
 
     const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT _id, email, first_name, last_name, address, city,
-              postal_code, country, phone, role, created_at
+      `SELECT _id, email, first_name, last_name, address, phone, role, created_at
        FROM users WHERE _id = ?`,
       [userId],
     );
@@ -146,13 +160,30 @@ export const getUserById = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const [users] = await pool.query<RowDataPacket[]>(
-      "SELECT _id, email, first_name, last_name, postal_code, address, city, country, phone, role, created_at FROM users WHERE _id = ?",
+      "SELECT _id, email, first_name, last_name, address, phone, role, created_at FROM users WHERE _id = ?",
       [id],
     );
     if (users.length === 0) {
       return res.status(404).json({ data: null, message: "User not found" });
     }
-    res.json({ data: users[0], success: true });
+    const user = users[0];
+    let addressObj = {};
+    try {
+      addressObj = user.address ? JSON.parse(user.address) : {};
+    } catch {}
+    res.json({
+      data: {
+        _id: user._id,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        address: addressObj,
+        phone: user.phone,
+        role: user.role,
+        created_at: user.created_at,
+      },
+      success: true,
+    });
   } catch (error) {
     res.status(500).json({ data: null, message: "error" });
     console.error(error);
@@ -168,9 +199,6 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
       "last_name",
       "email",
       "address",
-      "city",
-      "postal_code",
-      "country",
       "phone",
       "role",
     ];
@@ -180,8 +208,13 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
 
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
-        fields.push(`${field} = ?`);
-        values.push(req.body[field] || null);
+        if (field === "address" && typeof req.body[field] === "object") {
+          fields.push(`${field} = ?`);
+          values.push(JSON.stringify(req.body[field]));
+        } else {
+          fields.push(`${field} = ?`);
+          values.push(req.body[field] || null);
+        }
       }
     }
 
@@ -205,14 +238,26 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
 
     // Return updated user
     const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT _id, email, first_name, last_name, address, city, postal_code,
-              country, phone, role, created_at
+      `SELECT _id, email, first_name, last_name, address, phone, role, created_at
        FROM users WHERE _id = ?`,
       [id],
     );
-
+    const user = users[0];
+    let addressObj = {};
+    try {
+      addressObj = user.address ? JSON.parse(user.address) : {};
+    } catch {}
     res.json({
-      data: users[0],
+      data: {
+        _id: user._id,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        address: addressObj,
+        phone: user.phone,
+        role: user.role,
+        created_at: user.created_at,
+      },
       success: true,
     });
   } catch (error) {

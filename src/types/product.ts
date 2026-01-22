@@ -1,15 +1,21 @@
+import { Address } from "./address";
+
 export interface Product {
   _id?: string;
   name: string;
   description: string;
   price: number;
-  discount?: number; // percentage discount, e.g. 20 for 20%
+  discount_type?: 'percentage' | 'fixed' | null;
+  discount_value?: number | null;
+  discount_start?: Date | null;
+  discount_end?: Date | null;
   category: string;
   subcategory?: string;
   image: string;
   stock: number;
   sizes?: string;
   colors?: string;
+  address?: Address;
   created_at?: Date;
   updated_at?: Date;
 }

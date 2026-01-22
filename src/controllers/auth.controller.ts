@@ -36,11 +36,15 @@ export const register = async (req: Request, res: Response) => {
       first_name,
       last_name,
       address,
-      city,
-      postal_code,
-      country,
       phone,
     } = req.body;
+    // address: { street, city, postal_code, country }
+    let addressJson = null;
+    if (address && typeof address === 'object') {
+      addressJson = JSON.stringify(address);
+    } else if (typeof address === 'string') {
+      addressJson = address;
+    }
 
     // Check if user already exists
     const [existingUsers] = await pool.query<RowDataPacket[]>(
@@ -59,18 +63,15 @@ export const register = async (req: Request, res: Response) => {
     // Generate MongoDB-style ObjectId for new user
     const newuser_id = generateObjectId();
     await pool.query<ResultSetHeader>(
-      `INSERT INTO users (_id, email, password, first_name, last_name, address, city, postal_code, country, phone, role)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'customer')`,
+      `INSERT INTO users (_id, email, password, first_name, last_name, address, phone, role)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'customer')`,
       [
         newuser_id,
         email,
         hashedPassword,
         first_name,
         last_name,
-        address || null,
-        city || null,
-        postal_code || null,
-        country || null,
+        addressJson,
         phone || null,
       ],
     );
@@ -82,7 +83,7 @@ export const register = async (req: Request, res: Response) => {
 
     // Get created user
     const [users] = await pool.query<RowDataPacket[]>(
-      "SELECT _id, email, first_name, last_name, address, city, postal_code, country, phone, role FROM users WHERE _id = ?",
+      "SELECT _id, email, first_name, last_name, address, phone, role FROM users WHERE _id = ?",
       [newuser_id],
     );
 
@@ -110,7 +111,7 @@ export const login = async (req: Request, res: Response) => {
     console.log(`Login attempt for email: ${email}`);
     // Find user
     const [users] = await pool.query<RowDataPacket[]>(
-      "SELECT _id, email, password, first_name, last_name, address, city, postal_code, country, phone, role FROM users WHERE email = ?",
+      "SELECT _id, email, password, first_name, last_name, address, phone, role FROM users WHERE email = ?",
       [email],
     );
 
@@ -161,7 +162,7 @@ export const logout = async (req: AuthRequest, res: Response) => {
 export const getProfile = async (req: AuthRequest, res: Response) => {
   try {
     const [users] = await pool.query<RowDataPacket[]>(
-      "SELECT _id, email, first_name, last_name, address, city, postal_code, country, phone, role, created_at FROM users WHERE _id = ?",
+      "SELECT _id, email, first_name, last_name, address, phone, role, created_at FROM users WHERE _id = ?",
       [req.user_id],
     );
 
@@ -169,7 +170,24 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    res.json({ data: users[0], success: true });
+    const user = users[0];
+    let addressObj = {};
+    try {
+      addressObj = user.address ? JSON.parse(user.address) : {};
+    } catch {}
+    res.json({
+      data: {
+        _id: user._id,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        address: addressObj,
+        phone: user.phone,
+        role: user.role,
+        created_at: user.created_at,
+      },
+      success: true,
+    });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
     console.error(error);
@@ -182,32 +200,28 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
       first_name,
       last_name,
       address,
-      city,
-      postal_code,
-      country,
       phone,
     } = req.body;
-
+    let addressJson = null;
+    if (address && typeof address === 'object') {
+      addressJson = JSON.stringify(address);
+    } else if (typeof address === 'string') {
+      addressJson = address;
+    }
     await pool.query(
-      `UPDATE users SET first_name = ?, last_name = ?, address = ?, city = ?, postal_code = ?, country = ?, phone = ?
-       WHERE _id = ?`,
+      `UPDATE users SET first_name = ?, last_name = ?, address = ?, phone = ? WHERE _id = ?`,
       [
         first_name,
         last_name,
-        address || null,
-        city || null,
-        postal_code || null,
-        country || null,
+        addressJson,
         phone || null,
         req.user_id,
       ],
     );
-
     const [users] = await pool.query<RowDataPacket[]>(
-      "SELECT _id, email, first_name, last_name, address, city, postal_code, country, phone, role FROM users WHERE _id = ?",
+      "SELECT _id, email, first_name, last_name, address, phone, role FROM users WHERE _id = ?",
       [req.user_id],
     );
-
     res.json({ data: users[0], success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });

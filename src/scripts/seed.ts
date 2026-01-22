@@ -418,10 +418,15 @@ const seedUsers = [
     password: "password123",
     first_name: "Pinky",
     last_name: "Princess",
-    address: "123 Main Street",
-    city: "Phnom Penh",
-    postal_code: "12000",
-    country: "Cambodia",
+    address: {
+      street: "Main Street",
+      house: "123",
+      village: "Old Market Area",
+      commune: "Boeng Keng Kang",
+      district: "Chamkar Mon",
+      province: "Phnom Penh",
+      country: "Cambodia",
+    },
     phone: "+85512345678",
     role: "admin",
   },
@@ -431,10 +436,15 @@ const seedUsers = [
     password: "password123",
     first_name: "Lyden",
     last_name: "Chai",
-    address: "123 Main Street",
-    city: "Phnom Penh",
-    postal_code: "12001",
-    country: "Cambodia",
+    address: {
+      street: "Main Street",
+      house: "123",
+      village: "Old Market Area",
+      commune: "Boeng Keng Kang",
+      district: "Chamkar Mon",
+      province: "Phnom Penh",
+      country: "Cambodia",
+    },
     phone: "+85512345678",
     role: "customer",
   },
@@ -444,10 +454,15 @@ const seedUsers = [
     password: "password123",
     first_name: "Lusi",
     last_name: "Zhao",
-    address: "123 Main Street",
-    city: "Phnom Penh",
-    postal_code: "12002",
-    country: "Cambodia",
+    address: {
+      street: "Main Street",
+      house: "123",
+      village: "Old Market Area",
+      commune: "Boeng Keng Kang",
+      district: "Chamkar Mon",
+      province: "Phnom Penh",
+      country: "Cambodia",
+    },
     phone: "+85512345678",
     role: "customer",
   },
@@ -457,8 +472,8 @@ async function seedUsersFn(connection: any) {
   for (const user of seedUsers) {
     const hashedPassword = await bcrypt.hash(user.password, 10);
     await connection.query(
-      `INSERT INTO users (_id, email, password, first_name, last_name, address, city, postal_code, country, phone, role)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO users (_id, email, password, first_name, last_name, address, phone, role)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE email = email`,
       [
         user._id,
@@ -466,10 +481,7 @@ async function seedUsersFn(connection: any) {
         hashedPassword,
         user.first_name,
         user.last_name,
-        user.address,
-        user.city,
-        user.postal_code,
-        user.country,
+        JSON.stringify(user.address),
         user.phone,
         user.role,
       ],
@@ -510,19 +522,25 @@ async function seedOrdersFn(connection: any) {
       const created_at = new Date(today.getTime() - i * 24 * 60 * 60 * 1000); // spread over last 30 days
       const orderId = generateObjectId();
       const orderCode = generateCode(i, "O");
+      const addressObj = {
+        street: "Main St",
+        house: "123",
+        village: "Old Market Area",
+        commune: "Boeng Keng Kang",
+        district: "Chamkar Mon",
+        province: user.city || "Phnom Penh",
+        country: user.country || "Cambodia",
+      };
       await connection.query(
-        `INSERT INTO orders (_id, code, user_id, total_amount, status, shipping_address, shipping_city, shipping_postal_code, shipping_country, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO orders (_id, code, user_id, total_amount, status, address, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           orderId,
           orderCode,
           user._id,
           total,
           status,
-          user.address || "123 Main St",
-          user.city || "Phnom Penh",
-          user.postal_code || "12000",
-          user.country || "Cambodia",
+          JSON.stringify(addressObj),
           created_at,
         ],
       );

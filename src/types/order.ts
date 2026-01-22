@@ -1,12 +1,11 @@
+import { Address } from "./address";
+
 export interface Order {
   _id?: string;
   user_id?: string;
   total_amount: number;
   status: "pending" | "processing" | "shipped" | "delivered" | "cancelled";
-  shipping_address: string;
-  shipping_city: string;
-  shipping_postal_code: string;
-  shipping_country: string;
+  address: Address;
   created_at?: Date;
   updated_at?: Date;
 }

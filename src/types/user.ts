@@ -1,13 +1,12 @@
+import { Address } from "./address";
+
 export interface User {
   id?: number;
   email: string;
   password: string;
   first_name: string;
   last_name: string;
-  address?: string;
-  city?: string;
-  postal_code?: string;
-  country?: string;
+  address?: Address;
   phone?: string;
   role?: "admin" | "customer";
   created_at?: Date;
@@ -19,10 +18,7 @@ export interface UserResponse {
   email: string;
   first_name: string;
   last_name: string;
-  address?: string;
-  city?: string;
-  postal_code?: string;
-  country?: string;
+  address?: Address;
   phone?: string;
   role?: "admin" | "customer";
   created_at?: Date;

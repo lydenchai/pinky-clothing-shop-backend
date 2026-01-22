@@ -64,14 +64,18 @@ function mapOrderRows(rows: RowDataPacket[]) {
         code: row.code,
         user_id: row.user_id,
         user_email: row.user_email,
+        user_phone: row.user_phone,
         user_first_name: row.user_first_name,
         user_last_name: row.user_last_name,
         total_amount: row.total_amount,
         status: row.status,
-        shipping_address: row.shipping_address,
-        shipping_city: row.shipping_city,
-        shipping_postal_code: row.shipping_postal_code,
-        shipping_country: row.shipping_country,
+        address: (() => {
+          try {
+            return row.address ? JSON.parse(row.address) : {};
+          } catch {
+            return {};
+          }
+        })(),
         created_at: row.created_at,
         updated_at: row.updated_at,
         items: [],
@@ -116,7 +120,7 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
       `SELECT o._id AS order_id, o.*, 
               oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
               p.name AS product_name, p.image AS product_image,
-              u.email AS user_email, u.first_name AS user_first_name, u.last_name AS user_last_name
+              u.email AS user_email, u.phone AS user_phone, u.first_name AS user_first_name, u.last_name AS user_last_name
        FROM orders o
        LEFT JOIN order_items oi ON o._id = oi.order_id
        LEFT JOIN products p ON oi.product_id = p._id
@@ -156,26 +160,17 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    /* ---------- SHIPPING ADDRESS ---------- */
-    const a = req.body.address || {};
-    const shipping_address = req.body.address
-      ? `${a.house || ""} ${a.street || ""} ${a.village || ""} ${
-          a.commune || ""
-        } ${a.district || ""} ${a.province || ""}`.trim()
-      : req.body.shipping_address || "";
-
-    const shipping_city = a.province || req.body.shipping_city || "";
-    const shipping_postal_code =
-      a.postal_code || req.body.shipping_postal_code || "";
-    const shipping_country =
-      a.country || req.body.shipping_country || "Cambodia";
+    // Address object
+    const address = req.body.address || {};
+    const addressJson = JSON.stringify(address);
 
     // Generate _id for order
     const order_id = req.body._id || generateObjectId();
     // Generate or use provided code
-    const order_code = req.body.code.trim()
-      ? req.body.code.trim()
-      : generateCode(0, "O");
+    const order_code =
+      req.body.code && req.body.code.trim()
+        ? req.body.code.trim()
+        : generateCode(0, "O");
 
     await connection.beginTransaction();
     transactionStarted = true;
@@ -210,15 +205,12 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       order_code,
       req.user_id,
       total_amount,
-      shipping_address,
-      shipping_city,
-      shipping_postal_code,
-      shipping_country,
+      addressJson,
     ];
     await connection.query(
       `INSERT INTO orders
-       (_id, code, user_id, total_amount, status, shipping_address, shipping_city, shipping_postal_code, shipping_country)
-       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+       (_id, code, user_id, total_amount, status, address)
+       VALUES (?, ?, ?, ?, 'pending', ?)`,
       orderValues,
     );
 
@@ -267,15 +259,16 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       [order_id],
     );
 
+    let addressObj = {};
+    try {
+      addressObj = JSON.parse(rows[0].address || "{}");
+    } catch {}
     const order = {
       _id: rows[0]._id,
       user_id: rows[0].user_id,
       total_amount: rows[0].total_amount,
       status: rows[0].status,
-      shipping_address: rows[0].shipping_address,
-      shipping_city: rows[0].shipping_city,
-      shipping_postal_code: rows[0].shipping_postal_code,
-      shipping_country: rows[0].shipping_country,
+      address: addressObj,
       created_at: rows[0].created_at,
       items: rows
         .filter((r) => r.item_id)
@@ -369,15 +362,19 @@ function mapGetOrdersRows(rows: RowDataPacket[]) {
         user: {
           _id: row.user_id,
           email: row.user_email,
+          phone: row.user_phone,
           first_name: row.user_first_name,
           last_name: row.user_last_name,
         },
         total_amount: row.total_amount,
         status: row.status,
-        shipping_address: row.shipping_address,
-        shipping_city: row.shipping_city,
-        shipping_postal_code: row.shipping_postal_code,
-        shipping_country: row.shipping_country,
+        address: (() => {
+          try {
+            return JSON.parse(row.address || "{}");
+          } catch {
+            return {};
+          }
+        })(),
         created_at: row.created_at,
         updated_at: row.updated_at,
         items: [],
@@ -434,7 +431,7 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
     let query = `SELECT o._id AS order_id, o.*, 
                         oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
                         p.name AS product_name, p.image AS product_image,
-                        u.email AS user_email, u.first_name AS user_first_name, u.last_name AS user_last_name
+                        u.email AS user_email, u.phone AS user_phone, u.first_name AS user_first_name, u.last_name AS user_last_name
                  FROM orders o
                  LEFT JOIN order_items oi ON o._id = oi.order_id
                  LEFT JOIN products p ON oi.product_id = p._id
@@ -482,7 +479,7 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
     let query = `SELECT o._id AS order_id, o.*, 
                         oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
                         p.name AS product_name, p.image AS product_image,
-                        u.email AS user_email, u.first_name AS user_first_name, u.last_name AS user_last_name
+                        u.email AS user_email, u.phone AS user_phone, u.first_name AS user_first_name, u.last_name AS user_last_name
                  FROM orders o
                  LEFT JOIN order_items oi ON o._id = oi.order_id
                  LEFT JOIN products p ON oi.product_id = p._id
@@ -501,21 +498,23 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, error: "Order not found" });
     }
 
+    let addressObj = {};
+    try {
+      addressObj = JSON.parse(rows[0].address || "{}");
+    } catch {}
     const order = {
       _id: rows[0].order_id,
       code: rows[0].code,
       user: {
         _id: rows[0].user_id,
         email: rows[0].user_email,
+        phone: rows[0].user_phone,
         first_name: rows[0].user_first_name,
         last_name: rows[0].user_last_name,
       },
       total_amount: rows[0].total_amount,
       status: rows[0].status,
-      shipping_address: rows[0].shipping_address,
-      shipping_city: rows[0].shipping_city,
-      shipping_postal_code: rows[0].shipping_postal_code,
-      shipping_country: rows[0].shipping_country,
+      address: addressObj,
       created_at: rows[0].created_at,
       updated_at: rows[0].updated_at,
       items: [] as any[],
@@ -699,10 +698,12 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
         shipping,
         tax,
         total,
-        shipping_address,
-        shipping_city,
-        shipping_postal_code,
-        shipping_country,
+        address: {
+          shipping_address,
+          shipping_city,
+          shipping_postal_code,
+          shipping_country,
+        },
       },
       success: true,
     });
@@ -745,11 +746,11 @@ export const getOrderSummary = async (req: AuthRequest, res: Response) => {
       data: {
         items: cart_items,
         total: total_amount,
-        shipping: {
-          address: shipping_address,
-          city: shipping_city,
-          postal_code: shipping_postal_code,
-          country: shipping_country,
+        address: {
+          shipping_address,
+          shipping_city,
+          shipping_postal_code,
+          shipping_country,
         },
       },
       success: true,
@@ -780,7 +781,7 @@ export const getUserOrders = async (req: AuthRequest, res: Response) => {
       `SELECT o._id AS order_id, o.*, 
               oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
               p.name AS product_name, p.image AS product_image,
-              u.email AS user_email, u.first_name AS user_first_name, u.last_name AS user_last_name
+              u.email AS user_email, u.phone AS user_phone, u.first_name AS user_first_name, u.last_name AS user_last_name
        FROM orders o
        LEFT JOIN order_items oi ON o._id = oi.order_id
        LEFT JOIN products p ON oi.product_id = p._id
@@ -801,15 +802,19 @@ export const getUserOrders = async (req: AuthRequest, res: Response) => {
           user: {
             _id: row.user_id,
             email: row.user_email,
+            phone: row.user_phone,
             first_name: row.user_first_name,
             last_name: row.user_last_name,
           },
           total_amount: row.total_amount,
           status: row.status,
-          shipping_address: row.shipping_address,
-          shipping_city: row.shipping_city,
-          shipping_postal_code: row.shipping_postal_code,
-          shipping_country: row.shipping_country,
+          address: (() => {
+            try {
+              return JSON.parse(row.address || "{}");
+            } catch {
+              return {};
+            }
+          })(),
           created_at: row.created_at,
           updated_at: row.updated_at,
           items: [],

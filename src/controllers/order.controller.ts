@@ -29,7 +29,7 @@ export const orderValidation = [
 // Get all orders for admin
 // Helper to build filter clause and params
 function buildOrderFilterClause(query: any) {
-  let { code, search, q } = query;
+  let { code, search, q, status } = query;
   if (!search && q) search = q;
   let filterClause = "";
   let filterParams: any[] = [];
@@ -43,6 +43,10 @@ function buildOrderFilterClause(query: any) {
         (filterClause ? " AND (" : " WHERE (") + codeFilters + ")";
       filterParams.push(...code.map((c: string) => `%${c}%`));
     }
+  }
+  if (status && typeof status === "string" && status !== "") {
+    filterClause += (filterClause ? " AND" : " WHERE") + " o.status = ?";
+    filterParams.push(status);
   }
   if (search) {
     filterClause +=
@@ -306,7 +310,7 @@ function buildGetOrdersFilterClause(
   isAdmin: boolean,
   userId: string,
 ) {
-  let { code, search, q } = query;
+  let { code, search, q, status } = query;
   if (!search && q) search = q;
   let filterClause = "";
   let filterParams: any[] = [];
@@ -330,6 +334,14 @@ function buildGetOrdersFilterClause(
     }
   }
 
+  // Helper for status filter
+  function addStatusFilter(status: any) {
+    if (typeof status === "string" && status !== "") {
+      filterClause += (filterClause ? " AND" : " WHERE") + " o.status = ?";
+      filterParams.push(status);
+    }
+  }
+
   // Helper for search filter
   function addSearchFilter(search: string) {
     filterClause +=
@@ -344,6 +356,9 @@ function buildGetOrdersFilterClause(
   }
   if (code) {
     addCodeFilter(code);
+  }
+  if (status) {
+    addStatusFilter(status);
   }
   if (search) {
     addSearchFilter(search);

@@ -26,6 +26,7 @@ const upload = multer({ storage });
 
 router.get("/", productController.getAllProducts);
 router.get("/categories", productController.getCategories);
+router.get("/subcategories", productController.getSubcategories);
 router.get("/find/:id", productController.getProductById);
 router.post(
   "/create",

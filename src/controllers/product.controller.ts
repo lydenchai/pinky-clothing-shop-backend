@@ -348,3 +348,16 @@ export const getCategories = async (req: Request, res: Response) => {
     console.error(error);
   }
 };
+
+export const getSubcategories = async (req: Request, res: Response) => {
+  try {
+    const [subcategories] = await pool.query<RowDataPacket[]>(
+      "SELECT DISTINCT subcategory FROM products ORDER BY subcategory",
+    );
+    
+    res.json({ data: subcategories.map((c) => c.subcategory), success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
+  }
+};

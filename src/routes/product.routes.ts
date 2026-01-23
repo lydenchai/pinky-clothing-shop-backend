@@ -45,4 +45,7 @@ router.patch( "/update/:id", authenticate, upload.single("image"), productContro
 // Delete a product
 router.delete("/delete/:id", authenticate, productController.deleteProduct);
 
+// Bulk set discount for multiple products (admin only)
+router.post("/bulk-discount", authenticate, productController.bulkSetDiscount);
+
 export default router;

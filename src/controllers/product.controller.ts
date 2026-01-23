@@ -430,3 +430,29 @@ export const getSubcategories = async (req: Request, res: Response) => {
     console.error(error);
   }
 };
+
+// Bulk set discount for multiple products
+export const bulkSetDiscount = async (req: AuthRequest, res: Response) => {
+  try {
+    const { productIds, discountType, discountValue, discountStart, discountEnd } = req.body;
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+      return res.status(400).json({ error: 'No products selected' });
+    }
+    // Convert dates to MySQL DATETIME
+    function toMySQLDatetime(val: any) {
+      if (!val) return null;
+      const d = new Date(val);
+      if (Number.isNaN(d.getTime())) return null;
+      return d.toISOString().slice(0, 19).replace('T', ' ');
+    }
+    const discount_start = toMySQLDatetime(discountStart);
+    const discount_end = toMySQLDatetime(discountEnd);
+    const sql = `UPDATE products SET discount_type = ?, discount_value = ?, discount_start = ?, discount_end = ? WHERE _id IN (${productIds.map(() => '?').join(',')})`;
+    const params = [discountType, discountValue, discount_start, discount_end, ...productIds];
+    const [result] = await pool.query<ResultSetHeader>(sql, params);
+    res.json({ success: true, affected: result.affectedRows });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal Server Error' });
+    console.error(error);
+  }
+};

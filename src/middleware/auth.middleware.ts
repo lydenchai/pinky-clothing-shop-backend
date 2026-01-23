@@ -1,3 +1,7 @@
+import { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
+import { config } from "../config";
+
 export const adminOnly = (
   req: AuthRequest,
   res: Response,
@@ -20,9 +24,6 @@ export const adminOnly = (
       );
   });
 };
-import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
-import { config } from "../config";
 
 export interface AuthRequest extends Request {
   user_id?: string;
@@ -43,7 +44,6 @@ export const authenticate = (
       user_id?: string;
     };
     req.user_id = decoded.user_id;
-
     next();
   } catch (error) {
     console.error(error);

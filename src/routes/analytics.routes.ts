@@ -7,10 +7,13 @@ import {
 
 const router = Router();
 
+// Log an analytics event
 router.post("/", logAnalyticsEvent);
+
+// Get recent analytics events (admin only)
 router.get("/", getAnalytics);
 
-// Admin summary endpoint
+// Get analytics summary (admin only)
 router.get("/summary", getAnalyticsSummary);
 
 export default router;

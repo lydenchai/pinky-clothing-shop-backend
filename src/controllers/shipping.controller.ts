@@ -31,6 +31,7 @@ function buildShippingSearchClause({ search, code, description, q }: any) {
   return { clause, params };
 }
 
+// Get all shippings with pagination and search
 export const getAllShippings = async (req: Request, res: Response) => {
   try {
     const { code, description, page, limit, search, q } = req.query;

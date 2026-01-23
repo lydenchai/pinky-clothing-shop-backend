@@ -4,6 +4,7 @@ import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { AuthRequest } from "../middleware/auth.middleware";
 import { generateObjectId } from "../utils/objectid.util";
 
+// Get all users with pagination and search
 export const getAllUsers = async (req: AuthRequest, res: Response) => {
   try {
     let { page, limit, search, q } = req.query;
@@ -80,21 +81,15 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Create a new user
 export const createUser = async (req: AuthRequest, res: Response) => {
   try {
-    const {
-      email,
-      password,
-      first_name,
-      last_name,
-      address,
-      phone,
-      role,
-    } = req.body;
+    const { email, password, first_name, last_name, address, phone, role } =
+      req.body;
     let addressJson = null;
-    if (address && typeof address === 'object') {
+    if (address && typeof address === "object") {
       addressJson = JSON.stringify(address);
-    } else if (typeof address === 'string') {
+    } else if (typeof address === "string") {
       addressJson = address;
     }
 
@@ -120,12 +115,12 @@ export const createUser = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // 🔐 Hash password
+    // Hash password
     const hashedPassword = await import("bcryptjs").then((bcrypt) =>
       bcrypt.hash(password, 10),
     );
 
-    // 🆔 Mongo-style ObjectId
+    // Mongo-style ObjectId
     const userId = generateObjectId();
 
     await pool.query<ResultSetHeader>(
@@ -156,6 +151,7 @@ export const createUser = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Get user by ID
 export const getUserById = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -190,6 +186,7 @@ export const getUserById = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Update an existing user
 export const updateUser = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -266,6 +263,7 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Delete a user
 export const deleteUser = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -285,6 +283,7 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Update user role
 export const updateUserRole = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;

@@ -6,6 +6,7 @@ import { AuthRequest } from "../middleware/auth.middleware";
 import { generateCode } from "../utils/code.util";
 import { generateObjectId } from "../utils/objectid.util";
 
+// Validation rules for creating/updating a product
 export const productValidation = [
   body("name").notEmpty().withMessage("Product name is required"),
   body("description").notEmpty().withMessage("Description is required"),
@@ -105,6 +106,7 @@ function parseArrayField(field: any) {
   return [];
 }
 
+// Get all products with pagination and filters
 export const getAllProducts = async (req: Request, res: Response) => {
   try {
     const { page, limit } = req.query;
@@ -135,7 +137,8 @@ export const getAllProducts = async (req: Request, res: Response) => {
           ? Number.parseFloat(p.price)
           : p.price;
       let discounted_price = getDiscountedPrice({ ...p, price });
-      discounted_price = Math.round(Number.parseFloat(discounted_price) * 100) / 100;
+      discounted_price =
+        Math.round(Number.parseFloat(discounted_price) * 100) / 100;
       return {
         ...p,
         price,
@@ -160,6 +163,7 @@ export const getAllProducts = async (req: Request, res: Response) => {
   }
 };
 
+// Get product by ID
 export const getProductById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -180,7 +184,8 @@ export const getProductById = async (req: Request, res: Response) => {
       }
       let discounted_price = getDiscountedPrice(product);
       if (discounted_price !== undefined && discounted_price !== null) {
-        discounted_price = Math.round(Number.parseFloat(discounted_price) * 100) / 100;
+        discounted_price =
+          Math.round(Number.parseFloat(discounted_price) * 100) / 100;
       }
       product.discounted_price = discounted_price;
       product.sizes = parseArrayField(product.sizes);
@@ -193,6 +198,7 @@ export const getProductById = async (req: Request, res: Response) => {
   }
 };
 
+// Create a new product
 export const createProduct = async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -226,8 +232,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
       });
     }
     const _id = req.body._id || generateObjectId();
-    const productCode =
-      code && code.trim() ? code.trim() : generateCode(0, "P");
+    const productCode = code.trim() ?? generateCode(0, "P");
     // Ensure sizes and colors are never undefined
     const safeSizes = sizes === undefined ? null : sizes;
     const safeColors = colors === undefined ? null : colors;
@@ -270,7 +275,8 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
         }
         let discounted_price = getDiscountedPrice(product);
         if (discounted_price !== undefined && discounted_price !== null) {
-          discounted_price = Math.round(Number.parseFloat(discounted_price) * 100) / 100;
+          discounted_price =
+            Math.round(Number.parseFloat(discounted_price) * 100) / 100;
         }
         product.discounted_price = discounted_price;
         product.sizes = parseArrayField(product.sizes);
@@ -289,6 +295,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Update an existing product
 export const updateProduct = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -312,7 +319,7 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
     function toMySQLDatetime(val: any) {
       if (!val) return null;
       const d = new Date(val);
-      if (isNaN(d.getTime())) return null;
+      if (Number.isNaN(d.getTime())) return null;
       // YYYY-MM-DD HH:MM:SS
       return d.toISOString().slice(0, 19).replace("T", " ");
     }
@@ -364,7 +371,8 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
       }
       let discounted_price = getDiscountedPrice(product);
       if (discounted_price !== undefined && discounted_price !== null) {
-        discounted_price = Math.round(Number.parseFloat(discounted_price) * 100) / 100;
+        discounted_price =
+          Math.round(Number.parseFloat(discounted_price) * 100) / 100;
       }
       product.discounted_price = discounted_price;
       product.sizes = parseArrayField(product.sizes);
@@ -377,6 +385,7 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Delete a product
 export const deleteProduct = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -394,6 +403,7 @@ export const deleteProduct = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Get distinct categories and subcategories
 export const getCategories = async (req: Request, res: Response) => {
   try {
     const [categories] = await pool.query<RowDataPacket[]>(
@@ -407,6 +417,7 @@ export const getCategories = async (req: Request, res: Response) => {
   }
 };
 
+// Get distinct subcategories
 export const getSubcategories = async (req: Request, res: Response) => {
   try {
     const [subcategories] = await pool.query<RowDataPacket[]>(

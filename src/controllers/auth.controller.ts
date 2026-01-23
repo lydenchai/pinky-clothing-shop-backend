@@ -9,6 +9,7 @@ import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { AuthRequest } from "../middleware/auth.middleware";
 import { generateObjectId } from "../utils/objectid.util";
 
+// Validation rules for registration and login
 export const registerValidation = [
   body("email").isEmail().withMessage("Invalid email address"),
   body("password")
@@ -18,11 +19,13 @@ export const registerValidation = [
   body("last_name").notEmpty().withMessage("Last name is required"),
 ];
 
+// Validation rules for login
 export const loginValidation = [
   body("email").isEmail().withMessage("Invalid email address"),
   body("password").notEmpty().withMessage("Password is required"),
 ];
 
+// Register a new user
 export const register = async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -38,6 +41,7 @@ export const register = async (req: Request, res: Response) => {
       address,
       phone,
     } = req.body;
+    
     // address: { street, city, postal_code, country }
     let addressJson = null;
     if (address && typeof address === 'object') {
@@ -98,6 +102,7 @@ export const register = async (req: Request, res: Response) => {
   }
 };
 
+// User login
 export const login = async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -155,10 +160,12 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 
+// User logout (client should simply discard token)
 export const logout = async (req: AuthRequest, res: Response) => {
   res.json({ success: true, message: "success" });
 };
 
+// Get user profile
 export const getProfile = async (req: AuthRequest, res: Response) => {
   try {
     const [users] = await pool.query<RowDataPacket[]>(
@@ -194,6 +201,7 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Update user profile
 export const updateProfile = async (req: AuthRequest, res: Response) => {
   try {
     const {

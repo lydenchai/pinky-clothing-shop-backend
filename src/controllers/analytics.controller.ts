@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { pool } from "../config/database";
 
+// Log an analytics event
 export const logAnalyticsEvent = async (req: Request, res: Response) => {
   try {
     const { type, user_id, data } = req.body;
@@ -16,6 +17,7 @@ export const logAnalyticsEvent = async (req: Request, res: Response) => {
   }
 };
 
+// Get recent analytics events (admin only)
 export const getAnalytics = async (req: Request, res: Response) => {
   try {
     const [rows] = await pool.query(

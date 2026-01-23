@@ -21,13 +21,14 @@ export const initializeDatabase = async () => {
       );
     }
 
-    // Ensure 'code' column exists in products table (robust for MySQL 8.0+)
-    try {
+    // Ensure 'code' column exists in products table (MySQL does not support IF NOT EXISTS for columns)
+    const [codeCols] = await connection.query(
+      `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'products' AND COLUMN_NAME = 'code'`,
+    );
+    if ((codeCols as any[]).length === 0) {
       await connection.query(
-        `ALTER TABLE products ADD COLUMN IF NOT EXISTS code VARCHAR(20) UNIQUE AFTER _id`,
+        `ALTER TABLE products ADD COLUMN code VARCHAR(20) UNIQUE AFTER _id`,
       );
-    } catch (e) {
-      console.error(e);
     }
 
     /* =======================

@@ -1,10 +1,11 @@
 import { Address } from "./address";
+import { OrderStatusEnum } from "./enums/order-status.enum";
 
 export interface Order {
   _id?: string;
   user_id?: string;
   total_amount: number;
-  status: "pending" | "processing" | "shipped" | "delivered" | "cancelled";
+  status: OrderStatusEnum;
   address: Address;
   created_at?: Date;
   updated_at?: Date;

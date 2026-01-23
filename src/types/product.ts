@@ -1,11 +1,12 @@
 import { Address } from "./address";
+import { DiscountTypeEnum } from "./enums/discount-type.enum";
 
 export interface Product {
   _id?: string;
   name: string;
   description: string;
   price: number;
-  discount_type?: 'percentage' | 'fixed' | null;
+  discount_type?: DiscountTypeEnum;
   discount_value?: number | null;
   discount_start?: Date | null;
   discount_end?: Date | null;

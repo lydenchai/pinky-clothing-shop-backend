@@ -6,28 +6,6 @@ import { generateObjectId } from "../utils/objectid.util";
 
 // Product templates for generating realistic products
 const productTemplates = {
-  "T-Shirts": [
-    {
-      name: "Classic",
-      adjectives: ["Cotton", "Premium", "Vintage", "Organic", "Soft"],
-    },
-    {
-      name: "Graphic",
-      adjectives: ["Artistic", "Retro", "Modern", "Abstract", "Minimalist"],
-    },
-    {
-      name: "V-Neck",
-      adjectives: ["Elegant", "Casual", "Fitted", "Relaxed", "Stylish"],
-    },
-    {
-      name: "Henley",
-      adjectives: ["Classic", "Button", "Textured", "Ribbed", "Layered"],
-    },
-    {
-      name: "Pocket",
-      adjectives: ["Casual", "Utility", "Simple", "Functional", "Basic"],
-    },
-  ],
   Jeans: [
     {
       name: "Slim Fit",
@@ -218,50 +196,9 @@ const productTemplates = {
       adjectives: ["Denim-Like", "Casual", "Lightweight", "Western", "Classic"],
     },
   ],
-  Activewear: [
-    {
-      name: "Leggings",
-      adjectives: [
-        "High-Waisted",
-        "Compression",
-        "Mesh Panel",
-        "Seamless",
-        "Capri",
-      ],
-    },
-    {
-      name: "Sports Bra",
-      adjectives: [
-        "High-Impact",
-        "Medium-Impact",
-        "Strappy",
-        "Racerback",
-        "Wireless",
-      ],
-    },
-    {
-      name: "Tank Top",
-      adjectives: ["Muscle", "Racerback", "Loose Fit", "Fitted", "Mesh"],
-    },
-    {
-      name: "Track Pants",
-      adjectives: ["Tapered", "Jogger", "Zip Ankle", "Relaxed", "Sweatpants"],
-    },
-    {
-      name: "Performance Tee",
-      adjectives: [
-        "Moisture-Wicking",
-        "Breathable",
-        "Seamless",
-        "Quick-Dry",
-        "Anti-Odor",
-      ],
-    },
-  ],
 };
 
 const colors = {
-  "T-Shirts": "White,Black,Gray,Navy,Red,Blue,Green,Yellow",
   Jeans: "Blue,Black,Gray,Light Blue,Dark Blue",
   Dresses: "Black,White,Red,Blue,Pink,Yellow,Green,Floral",
   Jackets: "Black,Brown,Navy,Gray,Tan,Olive",
@@ -269,11 +206,9 @@ const colors = {
   Sweaters: "Navy,Gray,Black,Burgundy,Cream,Camel,Green",
   Shorts: "Khaki,Navy,Black,Gray,Olive,Beige",
   Shirts: "White,Blue,Pink,Gray,Navy,Black,Green",
-  Activewear: "Black,Navy,Gray,Purple,Pink,Blue,Red",
 };
 
 const sizes = {
-  "T-Shirts": "XS,S,M,L,XL,XXL",
   Jeans: "26,28,30,32,34,36,38,40",
   Dresses: "XS,S,M,L,XL,XXL",
   Jackets: "XS,S,M,L,XL,XXL",
@@ -281,16 +216,9 @@ const sizes = {
   Sweaters: "XS,S,M,L,XL,XXL",
   Shorts: "XS,S,M,L,XL,XXL",
   Shirts: "XS,S,M,L,XL,XXL",
-  Activewear: "XS,S,M,L,XL,XXL",
 };
 
 const images = {
-  "T-Shirts": [
-    "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=800",
-    "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?w=800",
-    "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?w=800",
-    "https://images.unsplash.com/photo-1465101046530-73398c7f28ca?w=800",
-  ],
   Jeans: [
     "https://images.unsplash.com/photo-1542272604-787c3835535d?w=800",
     "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800",
@@ -332,12 +260,6 @@ const images = {
     "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?w=800",
     "https://images.unsplash.com/photo-1465101046530-73398c7f28ca?w=800",
     "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?w=800",
-  ],
-  Activewear: [
-    "https://images.unsplash.com/photo-1506629082955-511b1aa562c8?w=800",
-    "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800",
-    "https://images.unsplash.com/photo-1515378791036-0648a3ef77b2?w=800",
-    "https://images.unsplash.com/photo-1465101046530-73398c7f28ca?w=800",
   ],
 };
 

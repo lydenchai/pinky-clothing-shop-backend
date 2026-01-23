@@ -6,7 +6,7 @@ import { AuthRequest } from "../middleware/auth.middleware";
 import { generateObjectId } from "../utils/objectid.util";
 import { generateCode } from "../utils/code.util";
 
-/* ----------------------------- VALIDATION ----------------------------- */
+// Validation rules for creating/updating an order
 export const orderValidation = [
   body("address").custom((value) => {
     if (!value) throw new Error("Address is required");
@@ -33,7 +33,8 @@ function buildOrderFilterClause(query: any) {
   if (!search && q) search = q;
   let filterClause = "";
   let filterParams: any[] = [];
-  if (code) {
+
+  function addCodeFilter(code: any) {
     if (typeof code === "string") {
       filterClause += (filterClause ? " AND" : " WHERE") + " o.code LIKE ?";
       filterParams.push(`%${String(code)}%`);
@@ -44,18 +45,78 @@ function buildOrderFilterClause(query: any) {
       filterParams.push(...code.map((c: string) => `%${c}%`));
     }
   }
-  if (status && typeof status === "string" && status !== "") {
-    filterClause += (filterClause ? " AND" : " WHERE") + " o.status = ?";
-    filterParams.push(status);
+
+  function addStatusFilter(status: any) {
+    if (status && typeof status === "string" && status.trim().length > 0) {
+      const clause = filterClause ? " AND" : " WHERE";
+      filterClause += `${clause} o.status = ?`;
+      filterParams.push(status.trim());
+    }
   }
-  if (search) {
+
+  function addSearchFilter(search: any) {
     filterClause +=
       (filterClause ? " AND" : " WHERE") +
       " (o.code LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)";
     const s = `%${search}%`;
     filterParams.push(s, s, s);
   }
+
+  if (code) {
+    addCodeFilter(code);
+  }
+  if (status) {
+    addStatusFilter(status);
+  }
+  if (search) {
+    addSearchFilter(search);
+  }
   return { filterClause, filterParams };
+}
+
+// Helper to map order rows for getOrders
+function mapGetOrdersRows(rows: RowDataPacket[]) {
+  const map: Record<string, any> = {};
+  rows.forEach((row) => {
+    if (!map[row.order_id]) {
+      map[row.order_id] = {
+        _id: row.order_id,
+        code: row.code,
+        user: {
+          _id: row.user_id,
+          email: row.user_email,
+          phone: row.user_phone,
+          first_name: row.user_first_name,
+          last_name: row.user_last_name,
+        },
+        total_amount: row.total_amount,
+        status: row.status,
+        address: (() => {
+          try {
+            return JSON.parse(row.address || "{}");
+          } catch {
+            return {};
+          }
+        })(),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        items: [],
+      };
+    }
+    if (row.item_id) {
+      map[row.order_id].items.push({
+        _id: row.item_id,
+        product_id: row.product_id,
+        quantity: row.quantity,
+        price: row.price,
+        size: row.size,
+        color: row.color,
+        product_name: row.product_name,
+        product_image: row.product_image,
+      });
+    }
+  });
+  return Object.values(map);
 }
 
 // Helper to map order rows
@@ -102,6 +163,7 @@ function mapOrderRows(rows: RowDataPacket[]) {
   return Object.values(map);
 }
 
+// Get all orders (admin only)
 export const getAllOrders = async (req: AuthRequest, res: Response) => {
   try {
     let { page, limit } = req.query;
@@ -153,7 +215,7 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
   }
 };
 
-/* ----------------------------- CREATE ORDER --------------------------- */
+// Create a new order
 export const createOrder = async (req: AuthRequest, res: Response) => {
   const connection = await pool.getConnection();
   let transactionStarted = false;
@@ -170,16 +232,14 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 
     // Generate _id for order
     const order_id = req.body._id || generateObjectId();
+
     // Generate or use provided code
-    const order_code =
-      req.body.code && req.body.code.trim()
-        ? req.body.code.trim()
-        : generateCode(0, "O");
+    const order_code = req.body?.code?.trim() || generateCode(0, "O");
 
     await connection.beginTransaction();
     transactionStarted = true;
 
-    /* ---------- GET CART ITEMS (LOCK ROWS) ---------- */
+    // Get cart items with product details (lock rows)
     const [cart_items] = await connection.query<RowDataPacket[]>(
       `SELECT ci.product_id, ci.quantity, ci.size, ci.color,
               p.price, p.stock
@@ -194,7 +254,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       throw new Error("Cart is empty");
     }
 
-    /* ---------- VALIDATE STOCK & TOTAL ---------- */
+    // Validate stock and calculate total amount
     let total_amount = 0;
     for (const item of cart_items) {
       if (item.stock < item.quantity) {
@@ -203,7 +263,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       total_amount += item.price * item.quantity;
     }
 
-    /* ---------- CREATE ORDER ---------- */
+    // Create order
     const orderValues = [
       order_id,
       order_code,
@@ -218,7 +278,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       orderValues,
     );
 
-    /* ---------- INSERT ITEMS + UPDATE STOCK ---------- */
+    // Insert order items and update product stock
     for (const item of cart_items) {
       const orderItemId = generateObjectId(); // <-- FIX: generate _id for order_items
 
@@ -245,14 +305,14 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       );
     }
 
-    /* ---------- CLEAR CART ---------- */
+    // Clear cart
     await connection.query(`DELETE FROM cart_items WHERE user_id = ?`, [
       req.user_id,
     ]);
 
     await connection.commit();
 
-    /* ---------- FETCH ORDER ---------- */
+    // Fetch the created order
     const [rows] = await connection.query<RowDataPacket[]>(
       `SELECT o.*, oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
               p.name AS product_name, p.image AS product_image
@@ -301,8 +361,6 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     connection.release();
   }
 };
-
-/* ---------------------------- GET ORDERS ---------------------------- */
 
 // Helper to build filter clause for getOrders
 function buildGetOrdersFilterClause(
@@ -364,51 +422,6 @@ function buildGetOrdersFilterClause(
     addSearchFilter(search);
   }
   return { filterClause, filterParams };
-}
-
-// Helper to map order rows for getOrders
-function mapGetOrdersRows(rows: RowDataPacket[]) {
-  const map: Record<string, any> = {};
-  rows.forEach((row) => {
-    if (!map[row.order_id]) {
-      map[row.order_id] = {
-        _id: row.order_id,
-        code: row.code,
-        user: {
-          _id: row.user_id,
-          email: row.user_email,
-          phone: row.user_phone,
-          first_name: row.user_first_name,
-          last_name: row.user_last_name,
-        },
-        total_amount: row.total_amount,
-        status: row.status,
-        address: (() => {
-          try {
-            return JSON.parse(row.address || "{}");
-          } catch {
-            return {};
-          }
-        })(),
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        items: [],
-      };
-    }
-    if (row.item_id) {
-      map[row.order_id].items.push({
-        _id: row.item_id,
-        product_id: row.product_id,
-        quantity: row.quantity,
-        price: row.price,
-        size: row.size,
-        color: row.color,
-        product_name: row.product_name,
-        product_image: row.product_image,
-      });
-    }
-  });
-  return Object.values(map);
 }
 
 export const getOrders = async (req: AuthRequest, res: Response) => {
@@ -478,7 +491,7 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
   }
 };
 
-/* ---------------------------- GET ORDER BY ID ------------------------- */
+// Get order by ID
 export const getOrderById = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -557,7 +570,7 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
   }
 };
 
-/* --------------------------- UPDATE ORDER STATUS ---------------------- */
+// Update order status
 export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -595,6 +608,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
         .status(404)
         .json({ error: "Order not found or permission denied" });
     }
+
     // Return the full order object (including items) so frontend keeps rendering correctly
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT o._id AS order_id, o.*, oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
@@ -640,7 +654,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
   }
 };
 
-/* --------------------------- ORDER SUMMARY ---------------------------- */
+// Validation for order summary
 export const orderSummaryValidation = orderValidation;
 
 export const orderSummary = async (req: AuthRequest, res: Response) => {
@@ -668,7 +682,7 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
       shipping_country = req.body.shipping_country;
     }
     const [cart_items] = await pool.query<RowDataPacket[]>(
-      `SELECT ci.product_id, ci.quantity, ci.size, ci.color, p.price, p.stock, p.name AS product_name, p.image AS product_image
+      `SELECT ci.product_id, ci.quantity, ci.size, ci.color, p.price, p.discount_type, p.discount_value, p.discount_start, p.discount_end, p.stock, p.name AS product_name, p.image AS product_image
          FROM cart_items ci
          JOIN products p ON ci.product_id = p._id
          WHERE ci.user_id = ?`,
@@ -686,13 +700,36 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
           product_name: item.product_name,
         });
       }
-      subtotal += item.price * item.quantity;
+      // Calculate discounted price
+      const price = Number.parseFloat(item.price);
+      const discount_value =
+        item.discount_value !== null && item.discount_value !== undefined
+          ? Number.parseFloat(item.discount_value)
+          : null;
+      let discounted_price = price;
+      if (
+        item.discount_type === "percentage" &&
+        discount_value !== null
+      ) {
+        discounted_price = price * (1 - discount_value / 100);
+      } else if (
+        item.discount_type === "fixed" &&
+        discount_value !== null
+      ) {
+        discounted_price = price - discount_value;
+      }
+      subtotal += discounted_price * item.quantity;
       return {
         product_id: item.product_id,
         product_name: item.product_name,
         product_image: item.product_image,
         quantity: item.quantity,
-        price: item.price,
+        price: price,
+        discounted_price,
+        discount_type: item.discount_type,
+        discount_value,
+        discount_start: item.discount_start,
+        discount_end: item.discount_end,
         size: item.size,
         color: item.color,
         stock: item.stock,
@@ -740,7 +777,7 @@ export const getOrderSummary = async (req: AuthRequest, res: Response) => {
 
     // Get cart items for user
     const [cart_items] = await pool.query<RowDataPacket[]>(
-      `SELECT ci.product_id, ci.quantity, ci.size, ci.color, p.price, p.name, p.image
+      `SELECT ci.product_id, ci.quantity, ci.size, ci.color, p.price, p.discount_type, p.discount_value, p.discount_start, p.discount_end, p.name, p.image
        FROM cart_items ci
        JOIN products p ON ci.product_id = p._id
        WHERE ci.user_id = ?`,
@@ -750,17 +787,52 @@ export const getOrderSummary = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: "Cart is empty" });
     }
 
-    // Calculate total
-    let total_amount = 0;
-    for (const item of cart_items) {
-      total_amount += item.price * item.quantity;
-    }
-
-    // Return summary
+    // Calculate total using discounted prices
+    let subtotal = 0;
+    const items = cart_items.map((item) => {
+      const price = Number.parseFloat(item.price);
+      const discount_value =
+        item.discount_value !== null && item.discount_value !== undefined
+          ? Number.parseFloat(item.discount_value)
+          : null;
+      let discounted_price = price;
+      if (
+        item.discount_type === "percentage" &&
+        discount_value !== null
+      ) {
+        discounted_price = price * (1 - discount_value / 100);
+      } else if (
+        item.discount_type === "fixed" &&
+        discount_value !== null
+      ) {
+        discounted_price = price - discount_value;
+      }
+      subtotal += discounted_price * item.quantity;
+      return {
+        product_id: item.product_id,
+        product_name: item.name,
+        product_image: item.image,
+        quantity: item.quantity,
+        price: price,
+        discounted_price,
+        discount_type: item.discount_type,
+        discount_value,
+        discount_start: item.discount_start,
+        discount_end: item.discount_end,
+        size: item.size,
+        color: item.color,
+      };
+    });
+    const shipping = subtotal > 100 ? 0 : 10;
+    const tax = subtotal * 0.08;
+    const total = subtotal + shipping + tax;
     res.json({
       data: {
-        items: cart_items,
-        total: total_amount,
+        items,
+        subtotal,
+        shipping,
+        tax,
+        total,
         address: {
           shipping_address,
           shipping_city,

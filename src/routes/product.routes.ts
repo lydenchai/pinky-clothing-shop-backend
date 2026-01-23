@@ -1,8 +1,8 @@
 import { Router, Request } from "express";
 import * as productController from "../controllers/product.controller";
+import { authenticate } from "../middleware/auth.middleware";
 import multer from "multer";
 
-import { authenticate } from "../middleware/auth.middleware";
 const router = Router();
 
 // Configure multer for image uploads
@@ -24,23 +24,25 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+// Public product routes
 router.get("/", productController.getAllProducts);
+
+// Get products by category or subcategory
 router.get("/categories", productController.getCategories);
+
+// Get products by category or subcategory
 router.get("/subcategories", productController.getSubcategories);
+
+// Get product by ID
 router.get("/find/:id", productController.getProductById);
-router.post(
-  "/create",
-  authenticate,
-  upload.single("image"),
-  productController.productValidation,
-  productController.createProduct,
-);
-router.patch(
-  "/update/:id",
-  authenticate,
-  upload.single("image"),
-  productController.updateProduct,
-);
+
+// Admin-only product management routes
+router.post( "/create", authenticate, upload.single("image"), productController.productValidation, productController.createProduct );
+
+// Update product details
+router.patch( "/update/:id", authenticate, upload.single("image"), productController.updateProduct );
+
+// Delete a product
 router.delete("/delete/:id", authenticate, productController.deleteProduct);
 
 export default router;

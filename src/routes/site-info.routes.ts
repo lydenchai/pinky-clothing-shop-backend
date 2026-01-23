@@ -6,7 +6,10 @@ import {
 
 const router = Router();
 
+// Get site information
 router.get("/", getSiteInfo);
+
+// Update site information
 router.patch("/update", updateSiteInfo);
 
 export default router;

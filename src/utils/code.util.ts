@@ -5,7 +5,7 @@
  */
 export function generateCode(
   lastNumberToday: number,
-  prefix: string = "P"
+  prefix: string = "P",
 ): string {
   const year = new Date().getFullYear().toString().slice(-2);
   const next = lastNumberToday + 1;

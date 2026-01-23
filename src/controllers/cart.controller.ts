@@ -6,95 +6,6 @@ import { AuthRequest } from "../middleware/auth.middleware";
 import { generateObjectId } from "../utils/objectid.util";
 import { generateCode } from "../utils/code.util";
 
-export const cartItemValidation = [
-  // Accept both flat and nested 'data.product_id' and 'quantity'
-  body().custom((value, { req }) => {
-    const body = req.body.data ? req.body.data : req.body;
-    const product_id = body.product_id;
-    // Accept both 24-char Mongo IDs and 36-char UUIDs
-    const isMongoId =
-      typeof product_id === "string" && /^[a-fA-F0-9]{24}$/.test(product_id);
-    const isUUID = typeof product_id === "string" && product_id.length === 36;
-    if (!isMongoId && !isUUID) {
-      throw new Error(
-        "Valid product ID is required (24-char MongoID or 36-char UUID)",
-      );
-    }
-    return true;
-  }),
-  body().custom((value, { req }) => {
-    const body = req.body.data ? req.body.data : req.body;
-    const quantity = body.quantity;
-    if (!Number.isInteger(quantity) || quantity < 1) {
-      throw new Error("Quantity must be at least 1");
-    }
-    return true;
-  }),
-];
-
-export const getCart = async (req: AuthRequest, res: Response) => {
-  try {
-    const [items] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        ci._id, ci.user_id, ci.product_id, ci.quantity, ci.size, ci.color, ci.created_at,
-        p.name as product_name, p.price as product_price, p.image as product_image, p.stock as product_stock
-       FROM cart_items ci
-       JOIN products p ON ci.product_id = p._id
-       WHERE ci.user_id = ?
-       ORDER BY ci.created_at DESC`,
-      [req.user_id],
-    );
-
-    // Calculate cart summary
-    const subtotal = items.reduce(
-      (sum, item) => sum + (item.product_price ?? 0) * item.quantity,
-      0,
-    );
-    let shipping = 0;
-    if (subtotal > 0) {
-      shipping = subtotal > 100 ? 0 : 10;
-    }
-    const tax = subtotal * 0.08;
-    const total = subtotal + shipping + tax;
-    res.json({
-      data: {
-        items,
-        totalItems: items.reduce((sum, item) => sum + item.quantity, 0),
-        subtotal,
-        shipping,
-        tax,
-        total,
-      },
-      success: true,
-    });
-  } catch (error) {
-    res.status(500).json({ error: "Internal Server Error" });
-    console.error(error);
-  }
-};
-
-export const getCartItemById = async (req: AuthRequest, res: Response) => {
-  try {
-    const { id } = req.params;
-    const [items] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        ci._id, ci.user_id, ci.product_id, ci.quantity, ci.size, ci.color, ci.created_at,
-        p.name as product_name, p.price as product_price, p.image as product_image, p.stock as product_stock
-       FROM cart_items ci
-       JOIN products p ON ci.product_id = p._id
-       WHERE ci._id = ?`,
-      [id],
-    );
-    if (items.length === 0) {
-      return res.status(404).json({ error: "Cart item not found" });
-    }
-    res.json({ data: items[0], success: true });
-  } catch (error) {
-    res.status(500).json({ error: "Internal Server Error" });
-    console.error(error);
-  }
-};
-
 // Helper to validate and get product
 async function validateAndGetProduct(
   product_id: string,
@@ -206,6 +117,144 @@ async function getCartSummary(user_id: string) {
   };
 }
 
+// Validation rules for adding/updating cart items
+export const cartItemValidation = [
+  // Accept both flat and nested 'data.product_id' and 'quantity'
+  body().custom((value, { req }) => {
+    const body = req.body.data ? req.body.data : req.body;
+    const product_id = body.product_id;
+    // Accept both 24-char Mongo IDs and 36-char UUIDs
+    const isMongoId =
+      typeof product_id === "string" && /^[a-fA-F0-9]{24}$/.test(product_id);
+    const isUUID = typeof product_id === "string" && product_id.length === 36;
+    if (!isMongoId && !isUUID) {
+      throw new Error(
+        "Valid product ID is required (24-char MongoID or 36-char UUID)",
+      );
+    }
+    return true;
+  }),
+  body().custom((value, { req }) => {
+    const body = req.body.data ? req.body.data : req.body;
+    const quantity = body.quantity;
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      throw new Error("Quantity must be at least 1");
+    }
+    return true;
+  }),
+];
+
+// Get current user's cart
+export const getCart = async (req: AuthRequest, res: Response) => {
+  try {
+    const [itemsRaw] = await pool.query<RowDataPacket[]>(
+      `SELECT 
+          ci._id, ci.user_id, ci.product_id, ci.quantity, ci.size, ci.color, ci.created_at,
+          p.name as product_name, p.price as product_price, p.discount_type as product_discount_type, p.discount_value as product_discount_value, p.discount_start as product_discount_start, p.discount_end as product_discount_end, p.image as product_image, p.stock as product_stock
+         FROM cart_items ci
+         JOIN products p ON ci.product_id = p._id
+         WHERE ci.user_id = ?
+         ORDER BY ci.created_at DESC`,
+      [req.user_id],
+    );
+
+    const items = itemsRaw.map((item) => {
+      // Ensure price and discount_value are floats
+      const price = Number.parseFloat(item.product_price);
+      const discount_value =
+        item.product_discount_value !== null &&
+        item.product_discount_value !== undefined
+          ? Number.parseFloat(item.product_discount_value)
+          : null;
+      // Calculate discounted_price
+      let discounted_price = price;
+      if (
+        item.product_discount_type === "percentage" &&
+        discount_value !== null
+      ) {
+        discounted_price = price * (1 - discount_value / 100);
+      } else if (
+        item.product_discount_type === "fixed" &&
+        discount_value !== null
+      ) {
+        discounted_price = price - discount_value;
+      }
+      return {
+        _id: item._id,
+        user_id: item.user_id,
+        quantity: item.quantity,
+        created_at: item.created_at,
+        product: {
+          _id: item.product_id,
+          name: item.product_name,
+          sizes: item.size,
+          colors: item.color,
+          price,
+          discount_type: item.product_discount_type,
+          discount_value,
+          discount_start: item.product_discount_start,
+          discount_end: item.product_discount_end,
+          discounted_price,
+          image: item.product_image,
+          stock: item.product_stock,
+        },
+      };
+    });
+
+    // Calculate cart summary
+    const subtotal = items.reduce(
+      (sum, item) =>
+        sum +
+        (item.product.discounted_price ?? item.product.price) * item.quantity,
+      0,
+    );
+    let shipping = 0;
+    if (subtotal > 0) {
+      shipping = subtotal > 100 ? 0 : 10;
+    }
+    const tax = subtotal * 0.08;
+    const total = subtotal + shipping + tax;
+    res.json({
+      data: {
+        items,
+        totalItems: items.reduce((sum, item) => sum + item.quantity, 0),
+        subtotal,
+        shipping,
+        tax,
+        total,
+      },
+      success: true,
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
+  }
+};
+
+// Get a specific cart item by ID
+export const getCartItemById = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const [items] = await pool.query<RowDataPacket[]>(
+      `SELECT 
+        ci._id, ci.user_id, ci.product_id, ci.quantity, ci.size, ci.color, ci.created_at,
+        p.name as product_name, p.price as product_price, p.image as product_image, p.stock as product_stock
+       FROM cart_items ci
+       JOIN products p ON ci.product_id = p._id
+       WHERE ci._id = ?`,
+      [id],
+    );
+    if (items.length === 0) {
+      return res.status(404).json({ error: "Cart item not found" });
+    }
+    res.json({ data: items[0], success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Internal Server Error" });
+    console.error(error);
+  }
+};
+
+// Add item to cart
 export const addToCart = async (req: AuthRequest, res: Response) => {
   try {
     const body = req.body.data ? req.body.data : req.body;
@@ -246,6 +295,7 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Update cart item quantity
 export const updateCartItem = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -313,6 +363,7 @@ export const updateCartItem = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Remove item from cart
 export const removeFromCart = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -372,6 +423,7 @@ export const removeFromCart = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Clear entire cart
 export const clearCart = async (req: AuthRequest, res: Response) => {
   try {
     await pool.query("DELETE FROM cart_items WHERE user_id = ?", [req.user_id]);

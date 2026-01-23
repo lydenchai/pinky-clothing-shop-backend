@@ -4,6 +4,7 @@ import { pool } from "../config/database";
 import { RowDataPacket } from "mysql2";
 import { generateObjectId } from "../utils/objectid.util";
 
+// Get wishlist for the authenticated user with pagination
 export const getUserWishlist = async (req: AuthRequest, res: Response) => {
   try {
     let { page, limit } = req.query;
@@ -47,6 +48,7 @@ export const getUserWishlist = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Add product to wishlist
 export const addProductToWishlist = async (req: AuthRequest, res: Response) => {
   try {
     const user_id = req.user_id;
@@ -74,6 +76,7 @@ export const addProductToWishlist = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Remove product from wishlist
 export const removeProductFromWishlist = async (
   req: AuthRequest,
   res: Response,

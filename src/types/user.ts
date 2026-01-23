@@ -1,4 +1,5 @@
 import { Address } from "./address";
+import { RoleEnum } from "./enums/role.enum";
 
 export interface User {
   id?: number;
@@ -8,7 +9,7 @@ export interface User {
   last_name: string;
   address?: Address;
   phone?: string;
-  role?: "admin" | "customer";
+  role?: RoleEnum;
   created_at?: Date;
   updated_at?: Date;
 }
@@ -20,7 +21,7 @@ export interface UserResponse {
   last_name: string;
   address?: Address;
   phone?: string;
-  role?: "admin" | "customer";
+  role?: RoleEnum;
   created_at?: Date;
   updated_at?: Date;
 }

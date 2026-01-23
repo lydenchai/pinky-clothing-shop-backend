@@ -4,6 +4,7 @@ import { RowDataPacket } from "mysql2";
 import { generateObjectId } from "../utils/objectid.util";
 import { generateCode } from "../utils/code.util";
 
+// Build search clause for inventory queries
 function buildInventorySearchClause(code: any, search: any, q: any) {
   let searchClause = "";
   let searchParams: any[] = [];
@@ -29,6 +30,7 @@ function buildInventorySearchClause(code: any, search: any, q: any) {
   return { searchClause, searchParams };
 }
 
+// Get all inventory items with pagination and search
 export const getAllInventory = async (req: Request, res: Response) => {
   try {
     let { code, page, limit, search, q } = req.query;
@@ -99,6 +101,7 @@ export const getAllInventory = async (req: Request, res: Response) => {
   }
 };
 
+// Get inventory item by ID
 export const getInventoryById = async (req: Request, res: Response) => {
   try {
     // Tell TypeScript the query returns RowDataPacket[]
@@ -140,6 +143,7 @@ export const getInventoryById = async (req: Request, res: Response) => {
   }
 };
 
+// Create a new inventory item
 export const createInventory = async (req: Request, res: Response) => {
   try {
     const { product_id, quantity, location, code } = req.body;
@@ -176,6 +180,7 @@ export const createInventory = async (req: Request, res: Response) => {
   }
 };
 
+// Update an existing inventory item
 export const updateInventory = async (req: Request, res: Response) => {
   try {
     const { quantity, location, product_id } = req.body;
@@ -206,7 +211,7 @@ export const updateInventory = async (req: Request, res: Response) => {
     if ((result as any).affectedRows === 0) {
       return res.status(404).json({ message: "Inventory item not found" });
     }
-
+    // Fetch the updated inventory item
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT * FROM inventory WHERE _id = ?`,
       [_id],
@@ -234,6 +239,7 @@ export const updateInventory = async (req: Request, res: Response) => {
   }
 };
 
+// Delete an inventory item
 export const deleteInventory = async (req: Request, res: Response) => {
   try {
     const [result] = await pool.query("DELETE FROM inventory WHERE _id = ?", [
@@ -250,6 +256,7 @@ export const deleteInventory = async (req: Request, res: Response) => {
   }
 };
 
+// Adjust stock quantity of an inventory item
 export const adjustStock = async (req: Request, res: Response) => {
   try {
     const { amount } = req.body;

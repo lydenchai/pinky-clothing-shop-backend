@@ -3,6 +3,7 @@ import { AuthRequest } from "../middleware/auth.middleware";
 import { pool } from "../config/database";
 import { RowDataPacket } from "mysql2";
 
+// Get site information
 export const getSiteInfo = async (req: AuthRequest, res: Response) => {
   try {
     const [info] = await pool.query<RowDataPacket[]>(
@@ -15,6 +16,7 @@ export const getSiteInfo = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// Update site information
 export const updateSiteInfo = async (req: AuthRequest, res: Response) => {
   try {
     await pool.query(`UPDATE site_info SET ?`, [req.body]);

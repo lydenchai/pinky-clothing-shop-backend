@@ -1,10 +1,10 @@
-import { pool } from "../config/database";
+import { sequelize } from "../config/sequelize";
+import { User } from "../models/User";
 import bcrypt from "bcryptjs";
-import { RowDataPacket, ResultSetHeader } from "mysql2";
 
 export const ensureAdminUser = async () => {
-  const connection = await pool.getConnection();
   try {
+    await sequelize.authenticate();
     const email = "pinky@example.com";
     const password = "password123";
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -12,38 +12,43 @@ export const ensureAdminUser = async () => {
     console.log(`Ensuring user ${email} exists and is admin...`);
 
     // Check if user exists
-    const [users] = await connection.query<RowDataPacket[]>(
-      "SELECT * FROM users WHERE email = ?",
-      [email]
-    );
+    const user = await User.findOne({ where: { email } });
 
-    if (users.length === 0) {
-      console.log("User not found. Creating...");
-      await connection.query<ResultSetHeader>(
-        `INSERT INTO users (_id, email, password, first_name, last_name, role, address, city, country, phone)
-         VALUES (?, ?, ?, 'Pinky', 'Princess', 'admin', '123 Main St', 'Phnom Penh', 'Cambodia', '+85512345678')`,
-        [email, hashedPassword]
-      );
-      console.log("User created successfully.");
-    } else {
+    if (user) {
       console.log("User found. Updating password and role...");
-      await connection.query<ResultSetHeader>(
-        "UPDATE users SET password = ?, role = 'admin' WHERE email = ?",
-        [hashedPassword, email]
-      );
+      user.password = hashedPassword;
+      user.role = "admin";
+      await user.save();
       console.log("User updated successfully.");
+    } else {
+      console.log("User not found. Creating...");
+      await User.create({
+        email,
+        password: hashedPassword,
+        first_name: "Pinky",
+        last_name: "Princess",
+        role: "admin",
+        address: "123 Main St", // Basic string for now, or JSON string if schema requires
+        phone: "+85512345678",
+      } as any);
+      console.log("User created successfully.");
     }
   } catch (error) {
     console.error("Error:", error);
     throw error;
-  } finally {
-    connection.release();
   }
 };
 
 // If executed directly, run and exit
 if (require.main === module) {
-  ensureAdminUser()
-    .then(() => process.exit(0))
-    .catch(() => process.exit(1));
+  // eslint-disable-next-line unicorn/prefer-top-level-await
+  void (async () => {
+    try {
+      await ensureAdminUser();
+      process.exit(0);
+    } catch (error) {
+      console.error(error);
+      process.exit(1);
+    }
+  })();
 }

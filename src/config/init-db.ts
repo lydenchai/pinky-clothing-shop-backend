@@ -138,6 +138,20 @@ export const initializeDatabase = async () => {
     /* =======================
        INVENTORY
     ======================== */
+    const [inventoryCols] = await connection.query(
+      `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'inventory' AND COLUMN_NAME = 'created_at'`,
+    );
+    if ((inventoryCols as any[]).length === 0) {
+      const [tableExists] = await connection.query(
+        `SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'inventory'`,
+      );
+      if ((tableExists as any[]).length > 0) {
+        await connection.query(
+          `ALTER TABLE inventory ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP AFTER location`,
+        );
+      }
+    }
+
     await connection.query(`
       CREATE TABLE IF NOT EXISTS inventory (
         _id VARCHAR(36) NOT NULL PRIMARY KEY,
@@ -145,6 +159,7 @@ export const initializeDatabase = async () => {
         product_id VARCHAR(36) NOT NULL,
         quantity INT NOT NULL DEFAULT 0,
         location VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (product_id) REFERENCES products(_id) ON DELETE CASCADE,
         INDEX idx_product_id (product_id)
@@ -231,7 +246,8 @@ export const initializeDatabase = async () => {
 };
 
 if (require.main === module) {
-  (async () => {
+  // eslint-disable-next-line unicorn/prefer-top-level-await
+  void (async () => {
     try {
       await initializeDatabase();
       console.log("Database initialized");

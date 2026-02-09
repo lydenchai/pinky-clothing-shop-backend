@@ -1,26 +1,19 @@
 import { Response } from "express";
-import { pool } from "../config/database";
-import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { AuthRequest } from "../middleware/auth.middleware";
-import { generateObjectId } from "../utils/objectid.util";
+import { User } from "../models/User";
+import { Op } from "sequelize";
+import bcrypt from "bcryptjs";
 
 // Get all users with pagination and search
 export const getAllUsers = async (req: AuthRequest, res: Response) => {
   try {
     let { page, limit, search, q } = req.query;
     if (!search && q) search = q;
-
-    // Pagination parameters
     const currentPage = Number.parseInt(page as string) || 1;
     const itemsPerPage = Number.parseInt(limit as string) || 15;
     const offset = (currentPage - 1) * itemsPerPage;
-
-    let query =
-      "SELECT _id, email, first_name, last_name, address, phone, role, created_at FROM users WHERE 1=1";
-    const params: any[] = [];
-
+    const whereClause: any = {};
     if (search) {
-      query += " AND (email LIKE ? OR first_name LIKE ? OR last_name LIKE ?)";
       let searchStr: string;
       if (
         typeof search === "string" ||
@@ -32,28 +25,33 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
         searchStr = "";
       }
       const searchTerm = `%${searchStr}%`;
-      params.push(searchTerm, searchTerm, searchTerm);
+      whereClause[Op.or] = [
+        { email: { [Op.like]: searchTerm } },
+        { first_name: { [Op.like]: searchTerm } },
+        { last_name: { [Op.like]: searchTerm } },
+      ];
     }
-
-    // Get total count for pagination
-    const countQuery = query.replace(
-      "SELECT _id, email, first_name, last_name, address, city, country, phone, role, created_at",
-      "SELECT COUNT(*) as total",
-    );
-    const [countResult] = await pool.query<RowDataPacket[]>(countQuery, params);
-    const totalItems = countResult[0].total;
-    const totalPages = Math.ceil(totalItems / itemsPerPage);
-
-    // Add pagination to query
-    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
-    params.push(itemsPerPage, offset);
-
-    const [users] = await pool.query<RowDataPacket[]>(query, params);
-    const usersWithAddress = users.map((user: any) => {
+    const { count, rows } = await User.findAndCountAll({
+      where: whereClause,
+      limit: itemsPerPage,
+      offset: offset,
+      order: [["created_at", "DESC"]],
+      attributes: [
+        "_id",
+        "email",
+        "first_name",
+        "last_name",
+        "address",
+        "phone",
+        "role",
+        "created_at",
+      ],
+    });
+    const usersWithAddress = rows.map((user) => {
       let addressObj = {};
       try {
         addressObj = user.address ? JSON.parse(user.address) : {};
-      } catch {}
+      } catch { }
       return {
         _id: user._id,
         email: user.email,
@@ -71,8 +69,8 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
       pagination: {
         page: currentPage,
         limit: itemsPerPage,
-        totalItems,
-        totalPages,
+        totalItems: count,
+        totalPages: Math.ceil(count / itemsPerPage),
       },
     });
   } catch (error) {
@@ -92,59 +90,49 @@ export const createUser = async (req: AuthRequest, res: Response) => {
     } else if (typeof address === "string") {
       addressJson = address;
     }
-
     if (!email || !password || !first_name || !last_name) {
       return res.status(400).json({
         data: null,
         message: "Missing required fields",
       });
     }
-
     const userRole = ["admin", "customer"].includes(role) ? role : "customer";
-
-    // 🔎 Check duplicate email
-    const [existing] = await pool.query<RowDataPacket[]>(
-      "SELECT _id FROM users WHERE email = ?",
-      [email.toLowerCase()],
-    );
-
-    if (existing.length > 0) {
+    const existing = await User.findOne({
+      where: { email: email.toLowerCase() },
+    });
+    if (existing) {
       return res.status(409).json({
         data: null,
         message: "Email already exists",
       });
     }
-
     // Hash password
-    const hashedPassword = await import("bcryptjs").then((bcrypt) =>
-      bcrypt.hash(password, 10),
-    );
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Mongo-style ObjectId
-    const userId = generateObjectId();
+    const newUser = await User.create({
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      first_name,
+      last_name,
+      address: addressJson,
+      phone: phone || null,
+      role: userRole,
+    });
 
-    await pool.query<ResultSetHeader>(
-      `INSERT INTO users
-       (_id, email, password, first_name, last_name, address, phone, role)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        userId,
-        email.toLowerCase(),
-        hashedPassword,
-        first_name,
-        last_name,
-        addressJson,
-        phone || null,
-        userRole,
+    // Return created user (exclude password)
+    const createdUser = await User.findByPk(newUser._id, {
+      attributes: [
+        "_id",
+        "email",
+        "first_name",
+        "last_name",
+        "address",
+        "phone",
+        "role",
+        "created_at",
       ],
-    );
-
-    const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT _id, email, first_name, last_name, address, phone, role, created_at
-       FROM users WHERE _id = ?`,
-      [userId],
-    );
-    res.status(201).json({ data: users[0], success: true });
+    });
+    res.status(201).json({ data: createdUser, success: true });
   } catch (error) {
     console.error(error);
     res.status(500).json({ data: null, message: "error" });
@@ -155,18 +143,28 @@ export const createUser = async (req: AuthRequest, res: Response) => {
 export const getUserById = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const [users] = await pool.query<RowDataPacket[]>(
-      "SELECT _id, email, first_name, last_name, address, phone, role, created_at FROM users WHERE _id = ?",
-      [id],
-    );
-    if (users.length === 0) {
+    const user = await User.findByPk(id, {
+      attributes: [
+        "_id",
+        "email",
+        "first_name",
+        "last_name",
+        "address",
+        "phone",
+        "role",
+        "created_at",
+      ],
+    });
+
+    if (!user) {
       return res.status(404).json({ data: null, message: "User not found" });
     }
-    const user = users[0];
+
     let addressObj = {};
     try {
       addressObj = user.address ? JSON.parse(user.address) : {};
-    } catch {}
+    } catch { }
+
     res.json({
       data: {
         _id: user._id,
@@ -186,75 +184,112 @@ export const getUserById = async (req: AuthRequest, res: Response) => {
   }
 };
 
+const prepareUserUpdates = (body: any) => {
+  const allowedFields = [
+    "first_name",
+    "last_name",
+    "email",
+    "address",
+    "phone",
+    "role",
+  ];
+  const updates: any = {};
+
+  for (const field of allowedFields) {
+    if (body[field] !== undefined) {
+      if (field === "address" && typeof body[field] === "object") {
+        updates[field] = JSON.stringify(body[field]);
+      } else {
+        updates[field] = body[field] || null;
+      }
+    }
+  }
+  return updates;
+};
+
+const getFormattedUserById = async (id: string) => {
+  const user = await User.findByPk(id, {
+    attributes: [
+      "_id",
+      "email",
+      "first_name",
+      "last_name",
+      "address",
+      "phone",
+      "role",
+      "created_at",
+    ],
+  });
+
+  if (!user) return null;
+
+  let addressObj = {};
+  try {
+    addressObj = user.address ? JSON.parse(user.address) : {};
+  } catch { }
+
+  return {
+    _id: user._id,
+    email: user.email,
+    first_name: user.first_name,
+    last_name: user.last_name,
+    address: addressObj,
+    phone: user.phone,
+    role: user.role,
+    created_at: user.created_at,
+  };
+};
+
 // Update an existing user
 export const updateUser = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const updates = prepareUserUpdates(req.body);
 
-    const allowedFields = [
-      "first_name",
-      "last_name",
-      "email",
-      "address",
-      "phone",
-      "role",
-    ];
-
-    const fields: string[] = [];
-    const values: any[] = [];
-
-    for (const field of allowedFields) {
-      if (req.body[field] !== undefined) {
-        if (field === "address" && typeof req.body[field] === "object") {
-          fields.push(`${field} = ?`);
-          values.push(JSON.stringify(req.body[field]));
-        } else {
-          fields.push(`${field} = ?`);
-          values.push(req.body[field] || null);
-        }
-      }
-    }
-
-    if (fields.length === 0) {
+    if (Object.keys(updates).length === 0) {
       return res.status(400).json({
         data: null,
         message: "No valid fields provided for update",
       });
     }
 
-    values.push(id);
+    // Check if new email is already taken by another user
+    if (updates.email) {
+      const existingUser = await User.findOne({
+        where: {
+          email: updates.email,
+          _id: { [Op.ne]: id }, // Exclude current user
+        },
+      });
 
-    const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE users SET ${fields.join(", ")} WHERE _id = ?`,
-      values,
-    );
+      if (existingUser) {
+        return res.status(409).json({
+          data: null,
+          message: "Email already exists",
+        });
+      }
+    }
 
-    if (result.affectedRows === 0) {
+    const [affectedRows] = await User.update(updates, {
+      where: { _id: id },
+    });
+
+    if (affectedRows === 0) {
+      // Check if user exists to distinguish between "not found" and "no changes"
+      const userExists = await User.findByPk(id);
+      if (!userExists) {
+        return res.status(404).json({ data: null, message: "User not found" });
+      }
+    }
+
+    const updatedUser = await getFormattedUserById(id);
+
+    if (!updatedUser) {
       return res.status(404).json({ data: null, message: "User not found" });
     }
 
-    // Return updated user
-    const [users] = await pool.query<RowDataPacket[]>(
-      `SELECT _id, email, first_name, last_name, address, phone, role, created_at
-       FROM users WHERE _id = ?`,
-      [id],
-    );
-    const user = users[0];
-    let addressObj = {};
-    try {
-      addressObj = user.address ? JSON.parse(user.address) : {};
-    } catch {}
     res.json({
-      data: {
-        _id: user._id,
-        email: user.email,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        address: addressObj,
-        phone: user.phone,
-        role: user.role,
-        created_at: user.created_at,
-      },
+      data: updatedUser,
       success: true,
     });
   } catch (error) {
@@ -268,12 +303,11 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
-    const [result] = await pool.query<ResultSetHeader>(
-      "DELETE FROM users WHERE _id = ?",
-      [id],
-    );
+    const affectedRows = await User.destroy({
+      where: { _id: id },
+    });
 
-    if (result.affectedRows === 0) {
+    if (affectedRows === 0) {
       return res.status(404).json({ data: null, message: "User not found" });
     }
     res.json({ data: null, success: true });
@@ -291,12 +325,17 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
     if (!["admin", "customer"].includes(role)) {
       return res.status(400).json({ data: null, message: "Invalid role" });
     }
-    const [result] = await pool.query<ResultSetHeader>(
-      "UPDATE users SET role = ? WHERE _id = ?",
-      [role, id],
+
+    const [affectedRows] = await User.update(
+      { role },
+      { where: { _id: id } }
     );
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ data: null, message: "User not found" });
+
+    if (affectedRows === 0) {
+      const userExists = await User.findByPk(id);
+      if (!userExists) {
+        return res.status(404).json({ data: null, message: "User not found" });
+      }
     }
     res.json({ data: null, success: true });
   } catch (error) {

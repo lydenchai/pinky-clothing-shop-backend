@@ -1,8 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import { config } from "./config";
-import { testConnection } from "./config/database";
-import { initializeDatabase } from "./config/init-db";
+import { sequelize, testConnection } from "./config/sequelize";
 import { ensureAdminUser } from "./scripts/ensure-admin-user";
 import { seed } from "./scripts/seed";
 
@@ -95,8 +94,8 @@ const startServer = async () => {
       process.exit(1);
     }
 
-    // Initialize database tables
-    await initializeDatabase();
+    // Initialize database (Sequelize sync)
+    await sequelize.sync({ alter: false }); // alter: true if you want it to update schema, careful in prod
 
     // In development, ensure an admin user exists automatically
     if (config.nodeEnv !== "production") {

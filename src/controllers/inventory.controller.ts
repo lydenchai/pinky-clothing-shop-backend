@@ -1,33 +1,34 @@
 import { Request, Response } from "express";
-import { pool } from "../config/database";
-import { RowDataPacket } from "mysql2";
 import { generateObjectId } from "../utils/objectid.util";
 import { generateCode } from "../utils/code.util";
+import { Inventory } from "../models/Inventory";
+import { Product } from "../models/Product";
+import { Op, WhereOptions } from "sequelize";
 
 // Build search clause for inventory queries
-function buildInventorySearchClause(code: any, search: any, q: any) {
-  let searchClause = "";
-  let searchParams: any[] = [];
-  if (!search && q) search = q;
+function buildInventoryWhereClause(code: any, search: any, q: any) {
+  let searchStr = search;
+  if (!searchStr && q) searchStr = q;
+  const whereClause: WhereOptions = {};
   if (code) {
     let codeStr: string | undefined;
     if (typeof code === "string" || typeof code === "number") {
       codeStr = String(code);
     }
     if (codeStr) {
-      searchClause +=
-        (searchClause ? " AND" : " WHERE") + " inventory.code LIKE ?";
-      searchParams.push(`%${codeStr}%`);
+      whereClause["code" as any] = { [Op.like]: `%${codeStr}%` };
     }
   }
-  if (search) {
-    searchClause +=
-      (searchClause ? " AND" : " WHERE") +
-      " (inventory.code LIKE ? OR products.name LIKE ? OR inventory.location LIKE ?)";
-    const s = `%${search}%`;
-    searchParams.push(s, s, s);
+
+  if (searchStr) {
+    const s = `%${searchStr}%`;
+    (whereClause as any)[Op.or] = [
+      { code: { [Op.like]: s } },
+      { location: { [Op.like]: s } },
+      { '$product.name$': { [Op.like]: s } } // Querying associated model
+    ];
   }
-  return { searchClause, searchParams };
+  return whereClause;
 }
 
 // Get all inventory items with pagination and search
@@ -35,51 +36,35 @@ export const getAllInventory = async (req: Request, res: Response) => {
   try {
     let { code, page, limit, search, q } = req.query;
 
-    // Pagination parameters
     const currentPage = Number.parseInt(page as string) || 1;
     const itemsPerPage = Number.parseInt(limit as string) || 15;
     const offset = (currentPage - 1) * itemsPerPage;
 
-    // Build search clause and params
-    const { searchClause, searchParams } = buildInventorySearchClause(
-      code,
-      search,
-      q,
-    );
+    const whereClause = buildInventoryWhereClause(code, search, q);
 
-    // Total count
-    const [countRows] = await pool.query(
-      `SELECT COUNT(*) as total FROM inventory LEFT JOIN products ON inventory.product_id = products._id${searchClause}`,
-      searchParams,
-    );
+    const { count, rows } = await Inventory.findAndCountAll({
+      where: whereClause,
+      include: [{
+        model: Product,
+        attributes: ['_id', 'name']
+      }],
+      limit: itemsPerPage,
+      offset: offset,
+      order: [['updated_at', 'DESC'], ['_id', 'DESC']]
+    });
 
-    const total =
-      Array.isArray(countRows) && (countRows as any)[0]
-        ? (countRows as any)[0].total
-        : 0;
-    // Paginated rows with product info populated
-    const [rows] = await pool.query(
-      `SELECT inventory.*, products._id AS product_id, products.name AS product_name
-       FROM inventory
-       LEFT JOIN products ON inventory.product_id = products._id
-       ${searchClause}
-       ORDER BY inventory.updated_at DESC, inventory._id DESC
-       LIMIT ? OFFSET ?`,
-      [...searchParams, Number(itemsPerPage), Number(offset)],
-    );
-
-    // Map rows to include product object
-    const data = (rows as any[]).map((row) => ({
-      _id: row._id,
-      code: row.code,
-      quantity: row.quantity,
-      location: row.location,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      product: row.product_id
-        ? { _id: row.product_id, name: row.product_name }
-        : null,
-    }));
+    const data = rows.map(item => {
+      const json = item.toJSON();
+      return {
+        _id: json._id,
+        code: json.code,
+        quantity: json.quantity,
+        location: json.location,
+        created_at: json.created_at,
+        updated_at: json.updated_at,
+        product: json.product ? { _id: json.product._id, name: json.product.name } : null
+      };
+    });
 
     res.json({
       success: true,
@@ -87,8 +72,8 @@ export const getAllInventory = async (req: Request, res: Response) => {
       pagination: {
         page: currentPage,
         limit: itemsPerPage,
-        totalItems: total,
-        totalPages: Math.ceil(total / itemsPerPage),
+        totalItems: count,
+        totalPages: Math.ceil(count / itemsPerPage),
       },
     });
   } catch (err) {
@@ -104,32 +89,28 @@ export const getAllInventory = async (req: Request, res: Response) => {
 // Get inventory item by ID
 export const getInventoryById = async (req: Request, res: Response) => {
   try {
-    // Tell TypeScript the query returns RowDataPacket[]
-    const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT inventory.*, products._id AS product_id, products.name AS product_name
-       FROM inventory
-       LEFT JOIN products ON inventory.product_id = products._id
-       WHERE inventory._id = ?`,
-      [req.params.id],
-    );
+    const item = await Inventory.findByPk(req.params.id, {
+      include: [{
+        model: Product,
+        attributes: ['_id', 'name']
+      }]
+    });
 
-    const item = rows[0];
     if (!item) {
       return res
         .status(404)
         .json({ success: false, message: "Inventory item not found" });
     }
 
+    const json = item.toJSON();
     const inventoryItem = {
-      _id: item._id,
-      code: item.code,
-      quantity: item.quantity,
-      location: item.location,
-      created_at: item.created_at,
-      updated_at: item.updated_at,
-      product: item.product_id
-        ? { _id: item.product_id, name: item.product_name }
-        : null,
+      _id: json._id,
+      code: json.code,
+      quantity: json.quantity,
+      location: json.location,
+      created_at: json.created_at,
+      updated_at: json.updated_at,
+      product: json.product ? { _id: json.product._id, name: json.product.name } : null
     };
 
     res.json({ success: true, data: inventoryItem });
@@ -147,30 +128,29 @@ export const getInventoryById = async (req: Request, res: Response) => {
 export const createInventory = async (req: Request, res: Response) => {
   try {
     const { product_id, quantity, location, code } = req.body;
+
     // Generate _id if not provided
     const _id = req.body._id || generateObjectId();
     const inventoryCode = code?.trim() ? code.trim() : generateCode(0, "I");
-    await pool.query(
-      "INSERT INTO inventory (_id, code, product_id, quantity, location) VALUES (?, ?, ?, ?, ?)",
-      [_id, inventoryCode, product_id, quantity, location],
-    );
-    const [rows] = await pool.query<RowDataPacket[]>(
-      "SELECT * FROM inventory WHERE _id = ?",
-      [_id],
-    );
-    const item = Array.isArray(rows) ? rows[0] : null;
+
+    const newItem = await Inventory.create({
+      _id,
+      code: inventoryCode,
+      product_id,
+      quantity,
+      location
+    });
+
     res.status(201).json({
-      data: item
-        ? {
-            _id: item._id,
-            code: item.code,
-            quantity: item.quantity,
-            location: item.location,
-            created_at: item.created_at,
-            updated_at: item.updated_at,
-            product_id: item.product_id,
-          }
-        : null,
+      data: {
+        _id: newItem._id,
+        code: newItem.code,
+        quantity: newItem.quantity,
+        location: newItem.location,
+        created_at: newItem.created_at,
+        updated_at: newItem.updated_at,
+        product_id: newItem.product_id,
+      },
       success: true,
     });
   } catch (err) {
@@ -186,49 +166,27 @@ export const updateInventory = async (req: Request, res: Response) => {
     const { quantity, location, product_id } = req.body;
     const { id: _id } = req.params;
 
-    // Build dynamic update fields
-    const fields = [];
-    const values = [];
-    if (quantity !== undefined) {
-      fields.push("quantity = ?");
-      values.push(quantity);
-    }
-    if (location !== undefined) {
-      fields.push("location = ?");
-      values.push(location);
-    }
-    if (product_id !== undefined) {
-      fields.push("product_id = ?");
-      values.push(product_id);
-    }
-    fields.push("updated_at = CURRENT_TIMESTAMP");
-
-    const sql = `UPDATE inventory SET ${fields.join(", ")} WHERE _id = ?`;
-    values.push(_id);
-
-    const [result] = await pool.query(sql, values);
-
-    if ((result as any).affectedRows === 0) {
+    const item = await Inventory.findByPk(_id);
+    if (!item) {
       return res.status(404).json({ message: "Inventory item not found" });
     }
-    // Fetch the updated inventory item
-    const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT * FROM inventory WHERE _id = ?`,
-      [_id],
-    );
-    const item = Array.isArray(rows) ? rows[0] : null;
+
+    if (quantity !== undefined) item.quantity = quantity;
+    if (location !== undefined) item.location = location;
+    if (product_id !== undefined) item.product_id = product_id;
+
+    await item.save();
+
     res.json({
-      data: item
-        ? {
-            _id: item._id,
-            code: item.code,
-            quantity: item.quantity,
-            location: item.location,
-            created_at: item.created_at,
-            updated_at: item.updated_at,
-            product_id: item.product_id,
-          }
-        : null,
+      data: {
+        _id: item._id,
+        code: item.code,
+        quantity: item.quantity,
+        location: item.location,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        product_id: item.product_id,
+      },
       success: true,
     });
   } catch (err) {
@@ -242,12 +200,14 @@ export const updateInventory = async (req: Request, res: Response) => {
 // Delete an inventory item
 export const deleteInventory = async (req: Request, res: Response) => {
   try {
-    const [result] = await pool.query("DELETE FROM inventory WHERE _id = ?", [
-      req.params.id,
-    ]);
-    if ((result as any).affectedRows === 0) {
+    const deletedCount = await Inventory.destroy({
+      where: { _id: req.params.id }
+    });
+
+    if (deletedCount === 0) {
       return res.status(404).json({ message: "Inventory item not found" });
     }
+
     res.json({ data: null, success: true });
   } catch (err) {
     res
@@ -260,42 +220,32 @@ export const deleteInventory = async (req: Request, res: Response) => {
 export const adjustStock = async (req: Request, res: Response) => {
   try {
     const { amount } = req.body;
-    // Get current quantity
-    const [rows] = (await pool.query(
-      "SELECT quantity FROM inventory WHERE _id = ?",
-      [req.params.id],
-    )) as [import("mysql2").RowDataPacket[], any];
-    const item = Array.isArray(rows) ? rows[0] : null;
+    const item = await Inventory.findByPk(req.params.id);
+
     if (!item) {
       return res.status(404).json({ message: "Inventory item not found" });
     }
+
     const newQuantity = item.quantity + amount;
     if (newQuantity < 0) {
       return res
         .status(400)
         .json({ message: "Insufficient stock. Cannot reduce below zero." });
     }
-    await pool.query(
-      "UPDATE inventory SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE _id = ?",
-      [newQuantity, req.params.id],
-    );
-    const [updatedRows] = await pool.query<RowDataPacket[]>(
-      "SELECT * FROM inventory WHERE _id = ?",
-      [req.params.id],
-    );
-    const updated = Array.isArray(updatedRows) ? updatedRows[0] : null;
+
+    item.quantity = newQuantity;
+    await item.save();
+
     res.json({
-      data: updated
-        ? {
-            _id: updated._id,
-            code: updated.code,
-            quantity: updated.quantity,
-            location: updated.location,
-            created_at: updated.created_at,
-            updated_at: updated.updated_at,
-            product_id: updated.product_id,
-          }
-        : null,
+      data: {
+        _id: item._id,
+        code: item.code,
+        quantity: item.quantity,
+        location: item.location,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        product_id: item.product_id,
+      },
       success: true,
     });
   } catch (err) {

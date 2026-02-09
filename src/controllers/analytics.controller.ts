@@ -1,14 +1,19 @@
 import { Request, Response } from "express";
-import { pool } from "../config/database";
+import { Analytics } from "../models/Analytics";
+import { Order } from "../models/Order";
+import { User } from "../models/User";
+import { Product } from "../models/Product";
+import { Op, fn, col, literal } from "sequelize";
 
 // Log an analytics event
 export const logAnalyticsEvent = async (req: Request, res: Response) => {
   try {
     const { type, user_id, data } = req.body;
-    await pool.query(
-      "INSERT INTO analytics (type, user_id, data) VALUES (?, ?, ?)",
-      [type, user_id || null, data ? JSON.stringify(data) : null],
-    );
+    await Analytics.create({
+        type,
+        user_id: user_id || null,
+        data: data ? JSON.stringify(data) : null
+    });
     res.status(201).json({ data: null, success: true });
   } catch (err) {
     res
@@ -20,9 +25,10 @@ export const logAnalyticsEvent = async (req: Request, res: Response) => {
 // Get recent analytics events (admin only)
 export const getAnalytics = async (req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query(
-      "SELECT * FROM analytics ORDER BY created_at DESC LIMIT 100",
-    );
+    const rows = await Analytics.findAll({
+        order: [['created_at', 'DESC']],
+        limit: 100
+    });
     res.json({ data: rows, success: true });
   } catch (err) {
     res.status(500).json({ message: "Failed to fetch analytics", error: err });
@@ -32,39 +38,42 @@ export const getAnalytics = async (req: Request, res: Response) => {
 // Admin analytics summary: total sales, orders, users, products, sales by day
 export const getAnalyticsSummary = async (req: Request, res: Response) => {
   try {
+    const statusFilter = {
+        status: {
+            [Op.in]: ['pending','processing','shipped','delivered']
+        }
+    };
+
     // Total sales (sum of all order totals for placed orders)
-    const [salesRows] = await pool.query<any[]>(
-      "SELECT SUM(total_amount) as totalSales FROM orders WHERE status IN ('pending','processing','shipped','delivered')",
-    );
-    const totalSales = salesRows[0]?.totalSales || 0;
+    const totalSales = await Order.sum('total_amount', { where: statusFilter }) || 0;
 
     // Total orders (only placed orders, not cancelled)
-    const [orderRows] = await pool.query<any[]>(
-      "SELECT COUNT(*) as totalOrders FROM orders WHERE status IN ('pending','processing','shipped','delivered')",
-    );
-    const totalOrders = orderRows[0]?.totalOrders || 0;
+    const totalOrders = await Order.count({ where: statusFilter });
 
     // Total users
-    const [userRows] = await pool.query<any[]>(
-      "SELECT COUNT(*) as totalUsers FROM users",
-    );
-    const totalUsers = userRows[0]?.totalUsers || 0;
+    const totalUsers = await User.count();
 
     // Total products
-    const [productRows] = await pool.query<any[]>(
-      "SELECT COUNT(*) as totalProducts FROM products",
-    );
-    const totalProducts = productRows[0]?.totalProducts || 0;
+    const totalProducts = await Product.count();
 
     // Sales by day (for chart, last 30 days)
-    const [salesByDayRows] = await pool.query<any[]>(
-      `SELECT DATE(created_at) as date, SUM(total_amount) as sales
-       FROM orders
-       WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-       GROUP BY DATE(created_at)
-       HAVING sales > 0
-       ORDER BY date ASC`,
-    );
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const salesByDayRows = await Order.findAll({
+        attributes: [
+            [fn('DATE', col('created_at')), 'date'],
+            [fn('SUM', col('total_amount')), 'sales']
+        ],
+        where: {
+            ...statusFilter,
+            created_at: {
+                [Op.gte]: thirtyDaysAgo
+            }
+        },
+        group: [fn('DATE', col('created_at'))],
+        order: [[literal('date'), 'ASC']]
+    });
 
     res.json({
       success: true,

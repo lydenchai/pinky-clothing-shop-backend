@@ -41,10 +41,14 @@ async function seedShippings() {
 }
 
 if (require.main === module) {
-  seedShippings()
-    .then(() => process.exit(0))
-    .catch((err) => {
+  // eslint-disable-next-line unicorn/prefer-top-level-await
+  void (async () => {
+    try {
+      await seedShippings();
+      process.exit(0);
+    } catch (err) {
       console.error(err);
       process.exit(1);
-    });
+    }
+  })();
 }

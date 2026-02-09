@@ -1,10 +1,15 @@
 import { Response } from "express";
-import { pool } from "../config/database";
-import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { body, validationResult } from "express-validator";
 import { AuthRequest } from "../middleware/auth.middleware";
 import { generateObjectId } from "../utils/objectid.util";
 import { generateCode } from "../utils/code.util";
+import { Order } from "../models/Order";
+import { OrderItem } from "../models/OrderItem";
+import { User } from "../models/User";
+import { Product } from "../models/Product";
+import { CartItem } from "../models/CartItem";
+import { sequelize } from "../config/sequelize";
+import { Op, WhereOptions } from "sequelize";
 
 // Validation rules for creating/updating an order
 export const orderValidation = [
@@ -26,142 +31,81 @@ export const orderValidation = [
   }),
 ];
 
-// Get all orders for admin
 // Helper to build filter clause and params
-function buildOrderFilterClause(query: any) {
+function buildOrderWhereClause(query: any) {
   let { code, search, q, status } = query;
   if (!search && q) search = q;
-  let filterClause = "";
-  let filterParams: any[] = [];
 
-  function addCodeFilter(code: any) {
-    if (typeof code === "string") {
-      filterClause += (filterClause ? " AND" : " WHERE") + " o.code LIKE ?";
-      filterParams.push(`%${String(code)}%`);
-    } else if (Array.isArray(code)) {
-      const codeFilters = code.map(() => "o.code LIKE ?").join(" OR ");
-      filterClause +=
-        (filterClause ? " AND (" : " WHERE (") + codeFilters + ")";
-      filterParams.push(...code.map((c: string) => `%${c}%`));
-    }
-  }
-
-  function addStatusFilter(status: any) {
-    if (status && typeof status === "string" && status.trim().length > 0) {
-      const clause = filterClause ? " AND" : " WHERE";
-      filterClause += `${clause} o.status = ?`;
-      filterParams.push(status.trim());
-    }
-  }
-
-  function addSearchFilter(search: any) {
-    filterClause +=
-      (filterClause ? " AND" : " WHERE") +
-      " (o.code LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)";
-    const s = `%${search}%`;
-    filterParams.push(s, s, s);
-  }
+  const whereClause: WhereOptions = {};
 
   if (code) {
-    addCodeFilter(code);
+    if (typeof code === "string") {
+      whereClause["code" as any] = { [Op.like]: `%${code}%` };
+    } else if (Array.isArray(code)) {
+      whereClause["code" as any] = { [Op.or]: code.map(c => ({ [Op.like]: `%${c}%` })) };
+    }
   }
-  if (status) {
-    addStatusFilter(status);
+
+  if (status && typeof status === "string" && status.trim().length > 0) {
+    whereClause["status" as any] = status.trim();
   }
+
   if (search) {
-    addSearchFilter(search);
+    const s = `%${search}%`;
+    // Use cast to any to avoid symbol index error with strict alignment
+    (whereClause as any)[Op.or] = [
+      { code: { [Op.like]: s } },
+      { '$user.first_name$': { [Op.like]: s } },
+      { '$user.last_name$': { [Op.like]: s } }
+    ];
   }
-  return { filterClause, filterParams };
+
+  return whereClause;
 }
 
-// Helper to map order rows for getOrders
-function mapGetOrdersRows(rows: RowDataPacket[]) {
-  const map: Record<string, any> = {};
-  rows.forEach((row) => {
-    if (!map[row.order_id]) {
-      map[row.order_id] = {
-        _id: row.order_id,
-        code: row.code,
-        user: {
-          _id: row.user_id,
-          email: row.user_email,
-          phone: row.user_phone,
-          first_name: row.user_first_name,
-          last_name: row.user_last_name,
-        },
-        total_amount: row.total_amount,
-        status: row.status,
-        address: (() => {
-          try {
-            return JSON.parse(row.address || "{}");
-          } catch {
-            return {};
-          }
-        })(),
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        items: [],
-      };
-    }
-    if (row.item_id) {
-      map[row.order_id].items.push({
-        _id: row.item_id,
-        product_id: row.product_id,
-        quantity: row.quantity,
-        price: row.price,
-        size: row.size,
-        color: row.color,
-        product_name: row.product_name,
-        product_image: row.product_image,
-      });
-    }
-  });
-  return Object.values(map);
+// Helper to format order response
+function formatOrder(orderModel: Order) {
+  const order = orderModel.toJSON();
+
+  // Parse address if it is string
+  let addressObj = {};
+  try {
+    addressObj = typeof order.address === 'string' ? JSON.parse(order.address || "{}") : order.address;
+  } catch {
+    addressObj = {};
+  }
+
+  // Map items
+  const items = (order.items || []).map((item: any) => ({
+    _id: item._id,
+    product_id: item.product_id,
+    quantity: item.quantity,
+    price: Number(item.price),
+    size: item.size,
+    color: item.color,
+    product_name: item.product?.name,
+    product_image: item.product?.image
+  }));
+
+  return {
+    _id: order._id,
+    code: order.code,
+    user: order.user ? {
+      _id: order.user._id,
+      email: order.user.email,
+      phone: order.user.phone,
+      first_name: order.user.first_name,
+      last_name: order.user.last_name,
+    } : null,
+    total_amount: Number(order.total_amount),
+    status: order.status,
+    address: addressObj,
+    created_at: order.created_at,
+    updated_at: order.updated_at,
+    items
+  };
 }
 
-// Helper to map order rows
-function mapOrderRows(rows: RowDataPacket[]) {
-  const map: Record<string, any> = {};
-  rows.forEach((row) => {
-    if (!map[row.order_id]) {
-      map[row.order_id] = {
-        _id: row.order_id,
-        code: row.code,
-        user_id: row.user_id,
-        user_email: row.user_email,
-        user_phone: row.user_phone,
-        user_first_name: row.user_first_name,
-        user_last_name: row.user_last_name,
-        total_amount: row.total_amount,
-        status: row.status,
-        address: (() => {
-          try {
-            return row.address ? JSON.parse(row.address) : {};
-          } catch {
-            return {};
-          }
-        })(),
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        items: [],
-      };
-    }
-    if (row.item_id) {
-      map[row.order_id].items.push({
-        _id: row.item_id,
-        code: row.code,
-        product_id: row.product_id,
-        quantity: row.quantity,
-        price: row.price,
-        size: row.size,
-        color: row.color,
-        product_name: row.product_name,
-        product_image: row.product_image,
-      });
-    }
-  });
-  return Object.values(map);
-}
 
 // Get all orders (admin only)
 export const getAllOrders = async (req: AuthRequest, res: Response) => {
@@ -171,33 +115,27 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
     const itemsPerPage = Number.parseInt(limit as string) || 15;
     const offset = (currentPage - 1) * itemsPerPage;
 
-    // Build filter clause
-    const { filterClause, filterParams } = buildOrderFilterClause(req.query);
+    const whereClause = buildOrderWhereClause(req.query);
 
-    // Total orders
-    const [countRows] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) as total FROM orders o LEFT JOIN users u ON o.user_id = u._id${filterClause}`,
-      filterParams,
-    );
-    const total = (countRows[0] as any)?.total || 0;
+    const { count, rows } = await Order.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: User,
+          attributes: ['_id', 'email', 'phone', 'first_name', 'last_name']
+        },
+        {
+          model: OrderItem,
+          include: [{ model: Product, attributes: ['name', 'image'] }]
+        }
+      ],
+      distinct: true, // Important for accurate count with includes
+      limit: itemsPerPage,
+      offset: offset,
+      order: [['updated_at', 'DESC'], ['_id', 'DESC']]
+    });
 
-    // Fetch orders with items and user info
-    const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT o._id AS order_id, o.*, 
-              oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS product_name, p.image AS product_image,
-              u.email AS user_email, u.phone AS user_phone, u.first_name AS user_first_name, u.last_name AS user_last_name
-       FROM orders o
-       LEFT JOIN order_items oi ON o._id = oi.order_id
-       LEFT JOIN products p ON oi.product_id = p._id
-       LEFT JOIN users u ON o.user_id = u._id
-       ${filterClause}
-       ORDER BY o.updated_at DESC, o._id DESC
-       LIMIT ? OFFSET ?`,
-      [...filterParams, limit, offset],
-    );
-
-    const data = mapOrderRows(rows);
+    const data = rows.map(formatOrder);
 
     res.json({
       success: true,
@@ -205,8 +143,8 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
       pagination: {
         page: currentPage,
         limit: itemsPerPage,
-        totalItems: total,
-        totalPages: Math.ceil(total / itemsPerPage),
+        totalItems: count,
+        totalPages: Math.ceil(count / itemsPerPage),
       },
     });
   } catch (error) {
@@ -217,12 +155,11 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
 
 // Create a new order
 export const createOrder = async (req: AuthRequest, res: Response) => {
-  const connection = await pool.getConnection();
-  let transactionStarted = false;
-
+  const t = await sequelize.transaction();
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      await t.rollback();
       return res.status(400).json({ errors: errors.array() });
     }
 
@@ -230,261 +167,157 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     const address = req.body.address || {};
     const addressJson = JSON.stringify(address);
 
-    // Generate _id for order
     const order_id = req.body._id || generateObjectId();
-
-    // Generate or use provided code
     const order_code = req.body?.code?.trim() || generateCode(0, "O");
 
-    await connection.beginTransaction();
-    transactionStarted = true;
+    if (!req.user_id) {
+      await t.rollback();
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
-    // Get cart items with product details (lock rows)
-    const [cart_items] = await connection.query<RowDataPacket[]>(
-      `SELECT ci.product_id, ci.quantity, ci.size, ci.color,
-              p.price, p.stock
-       FROM cart_items ci
-       JOIN products p ON ci.product_id = p._id
-       WHERE ci.user_id = ?
-       FOR UPDATE`,
-      [req.user_id ?? ""],
-    );
+    // Get cart items
+    const cartItems = await CartItem.findAll({
+      where: { user_id: req.user_id },
+      include: [{ model: Product }],
+      lock: true, // FOR UPDATE
+      transaction: t
+    });
 
-    if (!cart_items.length) {
+    if (!cartItems.length) {
       throw new Error("Cart is empty");
     }
 
-    // Validate stock and calculate total amount
     let total_amount = 0;
-    for (const item of cart_items) {
-      if (item.stock < item.quantity) {
+    const orderItemsData = [];
+
+    for (const item of cartItems) {
+      const product = item.product;
+      if (!product) continue;
+
+      if (product.stock < item.quantity) {
         throw new Error(`Insufficient stock for product ${item.product_id}`);
       }
-      total_amount += item.price * item.quantity;
+
+      // Calculate price (using product price, ignoring potential price changes in cart if any, assuming product price is source of truth)
+      // Original logic used p.price
+      const price = Number(product.price);
+      total_amount += price * item.quantity;
+
+      orderItemsData.push({
+        _id: generateObjectId(),
+        order_id: order_id,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        price: price, // Store price at time of order
+        size: item.size || null,
+        color: item.color || null
+      });
+
+      // Update stock
+      product.stock -= item.quantity;
+      await product.save({ transaction: t });
     }
 
     // Create order
-    const orderValues = [
-      order_id,
-      order_code,
-      req.user_id,
-      total_amount,
-      addressJson,
-    ];
-    await connection.query(
-      `INSERT INTO orders
-       (_id, code, user_id, total_amount, status, address)
-       VALUES (?, ?, ?, ?, 'pending', ?)`,
-      orderValues,
-    );
+    await Order.create({
+      _id: order_id,
+      code: order_code,
+      user_id: req.user_id,
+      total_amount: total_amount,
+      status: 'pending',
+      address: addressJson
+    }, { transaction: t });
 
-    // Insert order items and update product stock
-    for (const item of cart_items) {
-      const orderItemId = generateObjectId(); // <-- FIX: generate _id for order_items
-
-      await connection.query(
-        `INSERT INTO order_items
-         (_id, order_id, product_id, quantity, price, size, color)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          orderItemId,
-          order_id,
-          item.product_id,
-          item.quantity,
-          item.price,
-          item.size || null,
-          item.color || null,
-        ],
-      );
-
-      await connection.query(
-        `UPDATE products
-         SET stock = stock - ?
-         WHERE _id = ?`,
-        [item.quantity, item.product_id],
-      );
-    }
+    // Create order items
+    await OrderItem.bulkCreate(orderItemsData, { transaction: t });
 
     // Clear cart
-    await connection.query(`DELETE FROM cart_items WHERE user_id = ?`, [
-      req.user_id,
-    ]);
+    await CartItem.destroy({
+      where: { user_id: req.user_id },
+      transaction: t
+    });
 
-    await connection.commit();
+    await t.commit();
 
-    // Fetch the created order
-    const [rows] = await connection.query<RowDataPacket[]>(
-      `SELECT o.*, oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS product_name, p.image AS product_image
-       FROM orders o
-       LEFT JOIN order_items oi ON o._id = oi.order_id
-       LEFT JOIN products p ON oi.product_id = p._id
-       WHERE o._id = ?`,
-      [order_id],
-    );
+    // Fetch created order to return full details
+    const order = await Order.findByPk(order_id, {
+      include: [
+        { model: OrderItem, include: [Product] }
+      ]
+    });
 
-    let addressObj = {};
-    try {
-      addressObj = JSON.parse(rows[0].address || "{}");
-    } catch {}
-    const order = {
-      _id: rows[0]._id,
-      user_id: rows[0].user_id,
-      total_amount: rows[0].total_amount,
-      status: rows[0].status,
-      address: addressObj,
-      created_at: rows[0].created_at,
-      items: rows
-        .filter((r) => r.item_id)
-        .map((r) => ({
-          _id: r.item_id,
-          product_id: r.product_id,
-          quantity: r.quantity,
-          price: r.price,
-          size: r.size,
-          color: r.color,
-          product_name: r.product_name,
-          product_image: r.product_image,
-        })),
+    if (!order) throw new Error("Order creation failed");
+
+    // Format for response
+    // Match original response structure quite closely
+    const responseOrder = formatOrder(order);
+    // Explicitly map structure to match what frontend likely expects from original 'createOrder' return
+    // Original returned: { data: { _id, user_id, total_amount, status, address: obj, items: [...] }, success: true }
+    // formatOrder does exactly this (with populated user if available, here user might not be populated but user_id is)
+    // Actually formatOrder expects user to be populated for the 'user' field.
+    // Let's add user_id to result
+    const result: any = {
+      ...responseOrder,
+      user_id: req.user_id
     };
 
-    res.status(201).json({ data: order, success: true });
+    res.status(201).json({ data: result, success: true });
   } catch (error: any) {
-    if (transactionStarted) await connection.rollback();
-
+    await t.rollback();
     console.error("createOrder error:", error.message);
     res.status(500).json({
       success: false,
       error: error.message || "Internal Server Error",
     });
-  } finally {
-    connection.release();
   }
 };
 
-// Helper to build filter clause for getOrders
-function buildGetOrdersFilterClause(
-  query: any,
-  isAdmin: boolean,
-  userId: string,
-) {
-  let { code, search, q, status } = query;
-  if (!search && q) search = q;
-  let filterClause = "";
-  let filterParams: any[] = [];
-
-  // Helper for user filter
-  function addUserFilter() {
-    filterClause += (filterClause ? " AND" : " WHERE") + " o.user_id = ?";
-    filterParams.push(userId);
-  }
-
-  // Helper for code filter
-  function addCodeFilter(code: any) {
-    if (typeof code === "string") {
-      filterClause += (filterClause ? " AND" : " WHERE") + " o.code LIKE ?";
-      filterParams.push(`%${code}%`);
-    } else if (Array.isArray(code)) {
-      const codeFilters = code.map(() => "o.code LIKE ?").join(" OR ");
-      filterClause +=
-        (filterClause ? " AND (" : " WHERE (") + codeFilters + ")";
-      filterParams.push(...code.map((c: string) => `%${String(c)}%`));
-    }
-  }
-
-  // Helper for status filter
-  function addStatusFilter(status: any) {
-    if (typeof status === "string" && status !== "") {
-      filterClause += (filterClause ? " AND" : " WHERE") + " o.status = ?";
-      filterParams.push(status);
-    }
-  }
-
-  // Helper for search filter
-  function addSearchFilter(search: string) {
-    filterClause +=
-      (filterClause ? " AND" : " WHERE") +
-      " (o.code LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)";
-    const s = `%${String(search)}%`;
-    filterParams.push(s, s, s);
-  }
-
-  if (!isAdmin) {
-    addUserFilter();
-  }
-  if (code) {
-    addCodeFilter(code);
-  }
-  if (status) {
-    addStatusFilter(status);
-  }
-  if (search) {
-    addSearchFilter(search);
-  }
-  return { filterClause, filterParams };
-}
-
 export const getOrders = async (req: AuthRequest, res: Response) => {
   try {
-    // Check if user is admin
-    const [userRows] = await pool.query<RowDataPacket[]>(
-      "SELECT role FROM users WHERE _id = ?",
-      [req.user_id],
-    );
-    const isAdmin = Boolean(userRows.length && userRows[0].role === "admin");
+    const user = await User.findByPk(req.user_id);
+    const isAdmin = user?.role === 'admin';
 
-    // Build filter clause
-    const { filterClause, filterParams } = buildGetOrdersFilterClause(
-      req.query,
-      isAdmin,
-      req.user_id ?? "",
-    );
+    let { page, limit } = req.query;
+    const currentPage = Number.parseInt(page as string) || 1;
+    const itemsPerPage = Number.parseInt(limit as string) || 15;
+    const offset = (currentPage - 1) * itemsPerPage;
 
-    // Pagination
-    const page = Number.parseInt((req.query.page as string) || "1", 10);
-    const limit = Number.parseInt((req.query.limit as string) || "15", 10);
-    const offset = (page - 1) * limit;
+    const whereClause = buildOrderWhereClause(req.query);
+    if (!isAdmin) {
+      whereClause["user_id" as any] = req.user_id;
+    }
 
-    // Count total with same filter
-    let countQuery =
-      "SELECT COUNT(DISTINCT o._id) AS total FROM orders o LEFT JOIN users u ON o.user_id = u._id" +
-      filterClause;
-    const [countRows] = await pool.query<RowDataPacket[]>(
-      countQuery,
-      filterParams,
-    );
-    const total = (countRows[0] as any)?.total || 0;
+    const { count, rows } = await Order.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: User,
+          attributes: ['_id', 'email', 'phone', 'first_name', 'last_name']
+        },
+        {
+          model: OrderItem,
+          include: [{ model: Product, attributes: ['name', 'image'] }]
+        }
+      ],
+      distinct: true,
+      limit: itemsPerPage,
+      offset: offset,
+      order: [['updated_at', 'DESC'], ['_id', 'DESC']]
+    });
 
-    // Orders query
-    let query = `SELECT o._id AS order_id, o.*, 
-                        oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
-                        p.name AS product_name, p.image AS product_image,
-                        u.email AS user_email, u.phone AS user_phone, u.first_name AS user_first_name, u.last_name AS user_last_name
-                 FROM orders o
-                 LEFT JOIN order_items oi ON o._id = oi.order_id
-                 LEFT JOIN products p ON oi.product_id = p._id
-                 LEFT JOIN users u ON o.user_id = u._id
-                 ${filterClause}
-                 ORDER BY o.updated_at DESC, o._id DESC LIMIT ? OFFSET ?`;
-    const [rows] = await pool.query<RowDataPacket[]>(query, [
-      ...filterParams,
-      limit,
-      offset,
-    ]);
-
-    // Map orders
-    const orders = mapGetOrdersRows(rows);
+    const data = rows.map(formatOrder);
 
     res.json({
       success: true,
-      data: orders,
+      data,
       pagination: {
-        page: page,
-        limit: limit,
-        totalItems: total,
-        totalPages: Math.ceil(total / limit),
+        page: currentPage,
+        limit: itemsPerPage,
+        totalItems: count,
+        totalPages: Math.ceil(count / itemsPerPage),
       },
     });
+
   } catch (error) {
     console.error("getOrders error:", error);
     res.status(500).json({ success: false, error: "Internal Server Error" });
@@ -495,75 +328,33 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
 export const getOrderById = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const user = await User.findByPk(req.user_id);
+    const isAdmin = user?.role === 'admin';
 
-    // Check if user is admin
-    const [userRows] = await pool.query<RowDataPacket[]>(
-      "SELECT role FROM users WHERE _id = ?",
-      [req.user_id],
-    );
-    const isAdmin = userRows.length && userRows[0].role === "admin";
-
-    // Base query
-    let query = `SELECT o._id AS order_id, o.*, 
-                        oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
-                        p.name AS product_name, p.image AS product_image,
-                        u.email AS user_email, u.phone AS user_phone, u.first_name AS user_first_name, u.last_name AS user_last_name
-                 FROM orders o
-                 LEFT JOIN order_items oi ON o._id = oi.order_id
-                 LEFT JOIN products p ON oi.product_id = p._id
-                 LEFT JOIN users u ON o.user_id = u._id
-                 WHERE o._id = ?`;
-    const params: any[] = [id];
-
+    const where: WhereOptions = { _id: id };
     if (!isAdmin) {
-      query += " AND o.user_id = ?";
-      params.push(req.user_id);
+      where["user_id" as any] = req.user_id;
     }
 
-    const [rows] = await pool.query<RowDataPacket[]>(query, params);
+    const order = await Order.findOne({
+      where,
+      include: [
+        {
+          model: User,
+          attributes: ['_id', 'email', 'phone', 'first_name', 'last_name']
+        },
+        {
+          model: OrderItem,
+          include: [{ model: Product, attributes: ['name', 'image'] }]
+        }
+      ]
+    });
 
-    if (!rows.length) {
+    if (!order) {
       return res.status(404).json({ success: false, error: "Order not found" });
     }
 
-    let addressObj = {};
-    try {
-      addressObj = JSON.parse(rows[0].address || "{}");
-    } catch {}
-    const order = {
-      _id: rows[0].order_id,
-      code: rows[0].code,
-      user: {
-        _id: rows[0].user_id,
-        email: rows[0].user_email,
-        phone: rows[0].user_phone,
-        first_name: rows[0].user_first_name,
-        last_name: rows[0].user_last_name,
-      },
-      total_amount: rows[0].total_amount,
-      status: rows[0].status,
-      address: addressObj,
-      created_at: rows[0].created_at,
-      updated_at: rows[0].updated_at,
-      items: [] as any[],
-    };
-
-    rows.forEach((row) => {
-      if (row.item_id) {
-        order.items.push({
-          _id: row.item_id,
-          product_id: row.product_id,
-          quantity: row.quantity,
-          price: row.price,
-          size: row.size,
-          color: row.color,
-          product_name: row.product_name,
-          product_image: row.product_image,
-        });
-      }
-    });
-
-    res.json({ success: true, data: order });
+    res.json({ success: true, data: formatOrder(order) });
   } catch (error) {
     console.error("getOrderById error:", error);
     res.status(500).json({ success: false, error: "Internal Server Error" });
@@ -585,69 +376,55 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     if (!valid.includes(status)) {
       return res.status(400).json({ error: "Invalid status" });
     }
-    // Determine if the requester is an admin. Admins may update any order.
-    const [userRows] = await pool.query<RowDataPacket[]>(
-      "SELECT role FROM users WHERE _id = ?",
-      [req.user_id],
-    );
-    const isAdmin = userRows.length && userRows[0].role === "admin";
 
-    let query: string;
-    let params: any[];
-    if (isAdmin) {
-      query = `UPDATE orders SET status = ?, updated_at = NOW() WHERE _id = ?`;
-      params = [status, id];
-    } else {
-      query = `UPDATE orders SET status = ?, updated_at = NOW() WHERE _id = ? AND user_id = ?`;
-      params = [status, id, req.user_id];
+    const user = await User.findByPk(req.user_id);
+    const isAdmin = user?.role === 'admin';
+
+    const where: WhereOptions = { _id: id };
+    if (!isAdmin) {
+      where["user_id" as any] = req.user_id;
     }
 
-    const [result] = await pool.query<ResultSetHeader>(query, params);
-    if (result.affectedRows === 0) {
+    const order = await Order.findOne({ where });
+
+    if (!order) {
       return res
         .status(404)
         .json({ error: "Order not found or permission denied" });
     }
 
-    // Return the full order object (including items) so frontend keeps rendering correctly
-    const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT o._id AS order_id, o.*, oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS product_name, p.image AS product_image
-         FROM orders o
-         LEFT JOIN order_items oi ON o._id = oi.order_id
-         LEFT JOIN products p ON oi.product_id = p._id
-         WHERE o._id = ?`,
-      [id],
-    );
-    if (!rows.length) return res.status(404).json({ error: "Order not found" });
-    const order: any = {
-      _id: rows[0].order_id,
-      user_id: rows[0].user_id,
-      total_amount: rows[0].total_amount,
-      status: rows[0].status,
-      shipping_address: rows[0].shipping_address,
-      shipping_city: rows[0].shipping_city,
-      shipping_postal_code: rows[0].shipping_postal_code,
-      shipping_country: rows[0].shipping_country,
-      created_at: rows[0].created_at,
-      updated_at: rows[0].updated_at,
-      items: [],
-    };
-    rows.forEach((row) => {
-      if (row.item_id) {
-        order.items.push({
-          _id: row.item_id,
-          product_id: row.product_id,
-          quantity: row.quantity,
-          price: row.price,
-          size: row.size,
-          color: row.color,
-          product_name: row.product_name,
-          product_image: row.product_image,
-        });
-      }
+    order.status = status;
+    order.updated_at = new Date(); // Explicitly update updated_at if needed, though Sequelize handles it
+    await order.save();
+
+    // Fetch full order for response
+    const updatedOrder = await Order.findByPk(id, {
+      include: [
+        {
+          model: OrderItem,
+          include: [{ model: Product, attributes: ['name', 'image'] }]
+        }
+      ]
     });
-    res.json({ data: order, success: true });
+
+    if (!updatedOrder) return res.status(404).json({ error: "Order not found" });
+
+    // Format response to match original logic
+    const formatted = formatOrder(updatedOrder);
+    const responseData = {
+      ...formatted,
+      user_id: updatedOrder.user_id,
+      shipping_address: formatted.address, // Legacy mapping? Original code mapped address to shipping_address
+      // Actually original 'updateOrderStatus' result mapping:
+      // status, shipping_address (from rows[0].shipping_address?? No, existing code mapped rows[0].shipping_address which failed if column didn't exist or was virtual)
+      // Original code:
+      // shipping_address: rows[0].shipping_address
+      // But the SELECT was `o.*` and `o` has `address`. `shipping_address` likely wasn't in `orders` table unless added later.
+      // Assuming `address` column contains the JSON.
+      // I will return `address` as `shipping_address` just in case, or keep `address`.
+    };
+
+    res.json({ data: responseData, success: true });
   } catch (error) {
     console.error("updateOrderStatus error:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -663,15 +440,16 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
+
     let shipping_address = "",
       shipping_city = "",
       shipping_postal_code = "",
       shipping_country = "";
+
     if (req.body.address) {
       const a = req.body.address;
-      shipping_address = `${a.house || ""} ${a.street || ""} ${
-        a.village || ""
-      } ${a.commune || ""} ${a.district || ""} ${a.province || ""}`.trim();
+      shipping_address = `${a.house || ""} ${a.street || ""} ${a.village || ""
+        } ${a.commune || ""} ${a.district || ""} ${a.province || ""}`.trim();
       shipping_city = a.province || "";
       shipping_postal_code = a.postal_code || "";
       shipping_country = a.country || "Cambodia";
@@ -681,68 +459,74 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
       shipping_postal_code = req.body.shipping_postal_code;
       shipping_country = req.body.shipping_country;
     }
-    const [cart_items] = await pool.query<RowDataPacket[]>(
-      `SELECT ci.product_id, ci.quantity, ci.size, ci.color, p.price, p.discount_type, p.discount_value, p.discount_start, p.discount_end, p.stock, p.name AS product_name, p.image AS product_image
-         FROM cart_items ci
-         JOIN products p ON ci.product_id = p._id
-         WHERE ci.user_id = ?`,
-      [req.user_id ?? ""],
-    );
-    if (cart_items.length === 0) {
+
+    if (!req.user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const cartItems = await CartItem.findAll({
+      where: { user_id: req.user_id },
+      include: [{ model: Product }]
+    });
+
+    if (cartItems.length === 0) {
       return res.status(400).json({ error: "Cart is empty" });
     }
+
     let subtotal = 0;
     const outOfStock: any[] = [];
-    const items = cart_items.map((item) => {
-      if (item.stock < item.quantity) {
+
+    const items = cartItems.map((item) => {
+      const product = item.product;
+      // Should not happen if data integrity is fine
+      if (!product) return null;
+
+      if (product.stock < item.quantity) {
         outOfStock.push({
           product_id: item.product_id,
-          product_name: item.product_name,
+          product_name: product.name,
         });
       }
-      // Calculate discounted price
-      const price = Number.parseFloat(item.price);
-      const discount_value =
-        item.discount_value !== null && item.discount_value !== undefined
-          ? Number.parseFloat(item.discount_value)
-          : null;
+
+      const price = Number(product.price);
+      const discount_value = product.discount_value ? Number(product.discount_value) : null;
+
       let discounted_price = price;
-      if (
-        item.discount_type === "percentage" &&
-        discount_value !== null
-      ) {
+      if (product.discount_type === "percentage" && discount_value !== null) {
         discounted_price = price * (1 - discount_value / 100);
-      } else if (
-        item.discount_type === "fixed" &&
-        discount_value !== null
-      ) {
+      } else if (product.discount_type === "fixed" && discount_value !== null) {
         discounted_price = price - discount_value;
       }
+
       subtotal += discounted_price * item.quantity;
+
       return {
         product_id: item.product_id,
-        product_name: item.product_name,
-        product_image: item.product_image,
+        product_name: product.name,
+        product_image: product.image,
         quantity: item.quantity,
         price: price,
         discounted_price,
-        discount_type: item.discount_type,
+        discount_type: product.discount_type,
         discount_value,
-        discount_start: item.discount_start,
-        discount_end: item.discount_end,
+        discount_start: product.discount_start,
+        discount_end: product.discount_end,
         size: item.size,
         color: item.color,
-        stock: item.stock,
+        stock: product.stock,
       };
-    });
+    }).filter(Boolean); // Filter out nulls
+
     if (outOfStock.length > 0) {
       return res
         .status(400)
         .json({ error: "Some items are out of stock", outOfStock });
     }
+
     const shipping = subtotal > 100 ? 0 : 10;
     const tax = subtotal * 0.08;
     const total = subtotal + shipping + tax;
+
     res.json({
       data: {
         items,
@@ -767,7 +551,16 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
 
 // Order summary endpoint for frontend confirmation
 export const getOrderSummary = async (req: AuthRequest, res: Response) => {
+  // This function seems to duplicate orderSummary logic but usually used for just fetching calculated totals based on current cart
+  // Implementation is similar to orderSummary but validation might differ or input.
+  // Original implementation started on line 769 was incomplete in view.
+  // I will implement it mirroring orderSummary but maybe without address validation if not needed.
+
   try {
+    if (!req.user_id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const {
       shipping_address,
       shipping_city,
@@ -775,57 +568,53 @@ export const getOrderSummary = async (req: AuthRequest, res: Response) => {
       shipping_country,
     } = req.body;
 
-    // Get cart items for user
-    const [cart_items] = await pool.query<RowDataPacket[]>(
-      `SELECT ci.product_id, ci.quantity, ci.size, ci.color, p.price, p.discount_type, p.discount_value, p.discount_start, p.discount_end, p.name, p.image
-       FROM cart_items ci
-       JOIN products p ON ci.product_id = p._id
-       WHERE ci.user_id = ?`,
-      [req.user_id ?? ""],
-    );
-    if (cart_items.length === 0) {
+    const cartItems = await CartItem.findAll({
+      where: { user_id: req.user_id },
+      include: [{ model: Product }]
+    });
+
+    if (cartItems.length === 0) {
       return res.status(400).json({ error: "Cart is empty" });
     }
 
-    // Calculate total using discounted prices
     let subtotal = 0;
-    const items = cart_items.map((item) => {
-      const price = Number.parseFloat(item.price);
-      const discount_value =
-        item.discount_value !== null && item.discount_value !== undefined
-          ? Number.parseFloat(item.discount_value)
-          : null;
+
+    const items = cartItems.map((item) => {
+      const product = item.product;
+      if (!product) return null;
+
+      const price = Number(product.price);
+      const discount_value = product.discount_value ? Number(product.discount_value) : null;
+
       let discounted_price = price;
-      if (
-        item.discount_type === "percentage" &&
-        discount_value !== null
-      ) {
+      if (product.discount_type === "percentage" && discount_value !== null) {
         discounted_price = price * (1 - discount_value / 100);
-      } else if (
-        item.discount_type === "fixed" &&
-        discount_value !== null
-      ) {
+      } else if (product.discount_type === "fixed" && discount_value !== null) {
         discounted_price = price - discount_value;
       }
+
       subtotal += discounted_price * item.quantity;
+
       return {
         product_id: item.product_id,
-        product_name: item.name,
-        product_image: item.image,
+        product_name: product.name,
+        product_image: product.image,
         quantity: item.quantity,
         price: price,
         discounted_price,
-        discount_type: item.discount_type,
+        discount_type: product.discount_type,
         discount_value,
-        discount_start: item.discount_start,
-        discount_end: item.discount_end,
+        discount_start: product.discount_start,
+        discount_end: product.discount_end,
         size: item.size,
         color: item.color,
       };
-    });
+    }).filter(Boolean);
+
     const shipping = subtotal > 100 ? 0 : 10;
     const tax = subtotal * 0.08;
     const total = subtotal + shipping + tax;
+
     res.json({
       data: {
         items,
@@ -851,87 +640,44 @@ export const getOrderSummary = async (req: AuthRequest, res: Response) => {
 // Get orders for current user (always filters by req.user_id, even for admin)
 export const getUserOrders = async (req: AuthRequest, res: Response) => {
   try {
-    // Pagination
-    const page = Number.parseInt((req.query.page as string) || "1", 10);
-    const limit = Number.parseInt((req.query.limit as string) || "15", 10);
-    const offset = (page - 1) * limit;
+    let { page, limit } = req.query;
+    const currentPage = Number.parseInt(page as string) || 1;
+    const itemsPerPage = Number.parseInt(limit as string) || 15;
+    const offset = (currentPage - 1) * itemsPerPage;
 
-    // Count total
-    const [countRows] = await pool.query<RowDataPacket[]>(
-      "SELECT COUNT(DISTINCT o._id) AS total FROM orders o WHERE o.user_id = ?",
-      [req.user_id ?? ""],
-    );
-    const total = (countRows[0] as any)?.total || 0;
+    if (!req.user_id) return res.status(401).json({ error: "Unauthorized" });
 
-    // Orders query
-    const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT o._id AS order_id, o.*, 
-              oi._id AS item_id, oi.product_id, oi.quantity, oi.price, oi.size, oi.color,
-              p.name AS product_name, p.image AS product_image,
-              u.email AS user_email, u.phone AS user_phone, u.first_name AS user_first_name, u.last_name AS user_last_name
-       FROM orders o
-       LEFT JOIN order_items oi ON o._id = oi.order_id
-       LEFT JOIN products p ON oi.product_id = p._id
-       LEFT JOIN users u ON o.user_id = u._id
-       WHERE o.user_id = ?
-       ORDER BY o.updated_at DESC, o._id DESC
-       LIMIT ? OFFSET ?`,
-      [req.user_id ?? "", limit, offset],
-    );
-
-    // Map orders
-    const map: Record<string, any> = {};
-    rows.forEach((row) => {
-      if (!map[row.order_id]) {
-        map[row.order_id] = {
-          _id: row.order_id,
-          code: row.code,
-          user: {
-            _id: row.user_id,
-            email: row.user_email,
-            phone: row.user_phone,
-            first_name: row.user_first_name,
-            last_name: row.user_last_name,
-          },
-          total_amount: row.total_amount,
-          status: row.status,
-          address: (() => {
-            try {
-              return JSON.parse(row.address || "{}");
-            } catch {
-              return {};
-            }
-          })(),
-          created_at: row.created_at,
-          updated_at: row.updated_at,
-          items: [],
-        };
-      }
-      if (row.item_id) {
-        map[row.order_id].items.push({
-          _id: row.item_id,
-          code: row.code,
-          product_id: row.product_id,
-          quantity: row.quantity,
-          price: row.price,
-          size: row.size,
-          color: row.color,
-          product_name: row.product_name,
-          product_image: row.product_image,
-        });
-      }
+    const { count, rows } = await Order.findAndCountAll({
+      where: { user_id: req.user_id },
+      include: [
+        {
+          model: User,
+          attributes: ['_id', 'email', 'phone', 'first_name', 'last_name']
+        },
+        {
+          model: OrderItem,
+          include: [{ model: Product, attributes: ['name', 'image'] }]
+        }
+      ],
+      distinct: true,
+      limit: itemsPerPage,
+      offset: offset,
+      order: [['updated_at', 'DESC'], ['_id', 'DESC']]
     });
+
+    const data = rows.map(formatOrder);
 
     res.json({
       success: true,
-      data: Object.values(map),
+      data,
       pagination: {
-        page: page,
-        limit: limit,
-        totalItems: total,
-        totalPages: Math.ceil(total / limit),
+        page: currentPage,
+        limit: itemsPerPage,
+        totalItems: count,
+        totalPages: Math.ceil(count / itemsPerPage),
       },
     });
+
   } catch (error) {
     console.error("getUserOrders error:", error);
     res.status(500).json({ success: false, error: "Internal Server Error" });

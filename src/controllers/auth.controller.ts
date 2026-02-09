@@ -2,10 +2,8 @@ import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt, { SignOptions } from "jsonwebtoken";
 import { body, validationResult } from "express-validator";
-import { pool } from "../config/database";
 import { config } from "../config";
-import { User, UserResponse } from "../types/user";
-import { RowDataPacket, ResultSetHeader } from "mysql2";
+import { User } from "../models/User";
 import { AuthRequest } from "../middleware/auth.middleware";
 import { generateObjectId } from "../utils/objectid.util";
 
@@ -41,7 +39,7 @@ export const register = async (req: Request, res: Response) => {
       address,
       phone,
     } = req.body;
-    
+
     // address: { street, city, postal_code, country }
     let addressJson = null;
     if (address && typeof address === 'object') {
@@ -51,12 +49,9 @@ export const register = async (req: Request, res: Response) => {
     }
 
     // Check if user already exists
-    const [existingUsers] = await pool.query<RowDataPacket[]>(
-      "SELECT _id FROM users WHERE email = ?",
-      [email],
-    );
+    const existingUser = await User.findOne({ where: { email } });
 
-    if (existingUsers.length > 0) {
+    if (existingUser) {
       return res.status(400).json({ error: "Email already registered" });
     }
 
@@ -66,34 +61,35 @@ export const register = async (req: Request, res: Response) => {
     // Create user
     // Generate MongoDB-style ObjectId for new user
     const newuser_id = generateObjectId();
-    await pool.query<ResultSetHeader>(
-      `INSERT INTO users (_id, email, password, first_name, last_name, address, phone, role)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'customer')`,
-      [
-        newuser_id,
-        email,
-        hashedPassword,
-        first_name,
-        last_name,
-        addressJson,
-        phone || null,
-      ],
-    );
+
+    const newUser = await User.create({
+      _id: newuser_id,
+      email,
+      password: hashedPassword,
+      first_name,
+      last_name,
+      address: addressJson,
+      phone: phone || null,
+      role: 'customer',
+    });
 
     // Generate token
     const token = jwt.sign({ user_id: newuser_id }, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
     } as SignOptions);
 
-    // Get created user
-    const [users] = await pool.query<RowDataPacket[]>(
-      "SELECT _id, email, first_name, last_name, address, phone, role FROM users WHERE _id = ?",
-      [newuser_id],
-    );
+    // Get created user (ensure we return what front-end expects)
+    const userToReturn = {
+      _id: newUser._id,
+      email: newUser.email,
+      first_name: newUser.first_name,
+      last_name: newUser.last_name,
+      address: newUser.address,
+      phone: newUser.phone,
+      role: newUser.role
+    };
 
-    const user = users[0] as UserResponse;
-
-    res.status(201).json({ token, user });
+    res.status(201).json({ token, user: userToReturn });
   } catch (error) {
     res
       .status(500)
@@ -114,19 +110,15 @@ export const login = async (req: Request, res: Response) => {
 
     // Debug: log login attempt (do not log password)
     console.log(`Login attempt for email: ${email}`);
-    // Find user
-    const [users] = await pool.query<RowDataPacket[]>(
-      "SELECT _id, email, password, first_name, last_name, address, phone, role FROM users WHERE email = ?",
-      [email],
-    );
 
-    console.log("DB query returned user count:", (users as any[]).length);
-    if (users.length === 0) {
+    // Find user
+    const user = await User.findOne({ where: { email } });
+
+    console.log("DB query returned user:", user ? "Found" : "Not Found");
+    if (!user) {
       console.log(`Login failed: User not found for email ${email}`);
       return res.status(401).json({ error: "Invalid credentials" });
     }
-
-    const user = users[0] as User & { _id: string };
 
     // Verify password
     const isValidPassword = await bcrypt.compare(password, user.password);
@@ -141,7 +133,15 @@ export const login = async (req: Request, res: Response) => {
     } as SignOptions);
 
     // Remove password from response
-    const { password: _, ...userWithoutPassword } = user;
+    const userWithoutPassword = {
+      _id: user._id,
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      address: user.address,
+      phone: user.phone,
+      role: user.role
+    };
 
     res.json({ token, user: userWithoutPassword, success: true });
   } catch (error) {
@@ -168,20 +168,19 @@ export const logout = async (req: AuthRequest, res: Response) => {
 // Get user profile
 export const getProfile = async (req: AuthRequest, res: Response) => {
   try {
-    const [users] = await pool.query<RowDataPacket[]>(
-      "SELECT _id, email, first_name, last_name, address, phone, role, created_at FROM users WHERE _id = ?",
-      [req.user_id],
-    );
+    const user = await User.findByPk(req.user_id, {
+      attributes: ["_id", "email", "first_name", "last_name", "address", "phone", "role", "created_at"]
+    });
 
-    if (users.length === 0) {
+    if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const user = users[0];
     let addressObj = {};
     try {
       addressObj = user.address ? JSON.parse(user.address) : {};
-    } catch {}
+    } catch { }
+
     res.json({
       data: {
         _id: user._id,
@@ -210,27 +209,34 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
       address,
       phone,
     } = req.body;
+
     let addressJson = null;
     if (address && typeof address === 'object') {
       addressJson = JSON.stringify(address);
     } else if (typeof address === 'string') {
       addressJson = address;
     }
-    await pool.query(
-      `UPDATE users SET first_name = ?, last_name = ?, address = ?, phone = ? WHERE _id = ?`,
-      [
-        first_name,
-        last_name,
-        addressJson,
-        phone || null,
-        req.user_id,
-      ],
-    );
-    const [users] = await pool.query<RowDataPacket[]>(
-      "SELECT _id, email, first_name, last_name, address, phone, role FROM users WHERE _id = ?",
-      [req.user_id],
-    );
-    res.json({ data: users[0], success: true });
+
+    const updates: any = {
+      first_name,
+      last_name,
+      address: addressJson,
+      phone: phone || null
+    };
+
+    await User.update(updates, {
+      where: { _id: req.user_id }
+    });
+
+    const user = await User.findByPk(req.user_id, {
+      attributes: ["_id", "email", "first_name", "last_name", "address", "phone", "role"]
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json({ data: user, success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
     console.error(error);

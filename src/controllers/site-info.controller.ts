@@ -1,15 +1,12 @@
 import { Response } from "express";
 import { AuthRequest } from "../middleware/auth.middleware";
-import { pool } from "../config/database";
-import { RowDataPacket } from "mysql2";
+import { SiteInfo } from "../models/SiteInfo";
 
 // Get site information
 export const getSiteInfo = async (req: AuthRequest, res: Response) => {
   try {
-    const [info] = await pool.query<RowDataPacket[]>(
-      `SELECT * FROM site_info LIMIT 1`,
-    );
-    res.json({ success: true, data: info[0] });
+    const info = await SiteInfo.findOne();
+    res.json({ success: true, data: info });
   } catch (err) {
     res.status(500).json({ success: false, error: "Failed to get site info" });
     console.error(err);
@@ -19,11 +16,15 @@ export const getSiteInfo = async (req: AuthRequest, res: Response) => {
 // Update site information
 export const updateSiteInfo = async (req: AuthRequest, res: Response) => {
   try {
-    await pool.query(`UPDATE site_info SET ?`, [req.body]);
-    const [info] = await pool.query<RowDataPacket[]>(
-      `SELECT * FROM site_info LIMIT 1`,
-    );
-    res.json({ success: true, data: info[0] });
+    const info = await SiteInfo.findOne();
+    if (info) {
+      await info.update(req.body);
+    } else {
+      await SiteInfo.create(req.body);
+    }
+
+    const updatedInfo = await SiteInfo.findOne();
+    res.json({ success: true, data: updatedInfo });
   } catch (err) {
     console.error("Site info update error:", err);
     res

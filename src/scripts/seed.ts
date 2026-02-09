@@ -1,8 +1,14 @@
-import { pool } from "../config/database";
+import { sequelize } from "../config/sequelize";
+import { User } from "../models/User";
+import { Product } from "../models/Product";
+import { Order } from "../models/Order";
+import { OrderItem } from "../models/OrderItem";
+import { Inventory } from "../models/Inventory";
+import { SiteInfo } from "../models/SiteInfo";
 import bcrypt from "bcryptjs";
-import { ResultSetHeader } from "mysql2";
 import { generateCode } from "../utils/code.util";
 import { generateObjectId } from "../utils/objectid.util";
+import { Op } from "sequelize";
 
 // Product templates for generating realistic products
 const productTemplates = {
@@ -302,7 +308,7 @@ function generateProducts(count: number = 100) {
       const template = templates[i % templates.length];
       const adjective =
         template.adjectives[
-          Math.floor(Math.random() * template.adjectives.length)
+        Math.floor(Math.random() * template.adjectives.length)
         ];
       const description =
         descriptions[Math.floor(Math.random() * descriptions.length)];
@@ -316,9 +322,8 @@ function generateProducts(count: number = 100) {
         : imagesArr;
       products.push({
         name: `${adjective} ${template.name}`,
-        description: `${description} - ${
-          demographic.charAt(0).toUpperCase() + demographic.slice(1)
-        }'s ${productType}`,
+        description: `${description} - ${demographic.charAt(0).toUpperCase() + demographic.slice(1)
+          }'s ${productType}`,
         price: price,
         category: demographic,
         subcategory: productType,
@@ -390,48 +395,44 @@ const seedUsers = [
   },
 ];
 
-async function seedUsersFn(connection: any) {
+async function seedUsersFn() {
   for (const user of seedUsers) {
-    const hashedPassword = await bcrypt.hash(user.password, 10);
-    await connection.query(
-      `INSERT INTO users (_id, email, password, first_name, last_name, address, phone, role)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE email = email`,
-      [
-        user._id,
-        user.email,
-        hashedPassword,
-        user.first_name,
-        user.last_name,
-        JSON.stringify(user.address),
-        user.phone,
-        user.role,
-      ],
-    );
+    const existing = await User.findOne({ where: { email: user.email } });
+    if (!existing) {
+      const hashedPassword = await bcrypt.hash(user.password, 10);
+      await User.create({
+        ...user,
+        password: hashedPassword,
+        address: JSON.stringify(user.address),
+      } as any);
+    }
   }
 }
 
-async function seedOrdersFn(connection: any) {
+async function seedOrdersFn() {
   // Fetch all user IDs and product IDs
-  const [userRows] = await connection.query(`SELECT _id FROM users`);
-  const [productRows] = await connection.query(
-    `SELECT _id, price FROM products`,
-  );
-  if (userRows.length && productRows.length) {
-    const orderStatuses = ["pending", "delivered", "cancelled"];
+  const users = await User.findAll({ attributes: ["_id", "email"] });
+  const products = await Product.findAll({ attributes: ["_id", "price"] });
+
+  if (users.length && products.length) {
+    const orderStatuses = [
+      "pending",
+      "delivered",
+      "cancelled",
+    ];
     const today = new Date();
+
     for (let i = 0; i < 30; i++) {
-      // 30 orders, one per day
-      const user = userRows[Math.floor(Math.random() * userRows.length)];
+      const user = users[Math.floor(Math.random() * users.length)];
       // Pick 1-3 products per order (always at least 1)
       const numProducts = Math.max(1, Math.floor(Math.random() * 3) + 1);
-      const orderItems = [];
+      const orderItemsData = [];
       let total = 0;
+
       for (let j = 0; j < numProducts; j++) {
-        const prod =
-          productRows[Math.floor(Math.random() * productRows.length)];
+        const prod = products[Math.floor(Math.random() * products.length)];
         const quantity = Math.floor(Math.random() * 3) + 1;
-        orderItems.push({
+        orderItemsData.push({
           product_id: prod._id,
           quantity,
           price: prod.price,
@@ -442,42 +443,36 @@ async function seedOrdersFn(connection: any) {
       const status =
         orderStatuses[Math.floor(Math.random() * orderStatuses.length)];
       const created_at = new Date(today.getTime() - i * 24 * 60 * 60 * 1000); // spread over last 30 days
-      const orderId = generateObjectId();
       const orderCode = generateCode(i, "O");
+
+      // Mock address, using fixed data as in original script
       const addressObj = {
         street: "Main St",
         house: "123",
         village: "Old Market Area",
         commune: "Boeng Keng Kang",
         district: "Chamkar Mon",
-        province: user.city || "Phnom Penh",
-        country: user.country || "Cambodia",
+        province: "Phnom Penh",
+        country: "Cambodia",
       };
-      await connection.query(
-        `INSERT INTO orders (_id, code, user_id, total_amount, status, address, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          orderId,
-          orderCode,
-          user._id,
-          total,
-          status,
-          JSON.stringify(addressObj),
-          created_at,
-        ],
-      );
+
+      const order = await Order.create({
+        code: orderCode,
+        user_id: user._id,
+        total_amount: total,
+        status: status,
+        address: JSON.stringify(addressObj),
+        created_at: created_at,
+      } as any);
+
       // Insert order items
-      for (const item of orderItems) {
-        await connection.query(
-          `INSERT INTO order_items (_id, order_id, product_id, quantity, price) VALUES (?, ?, ?, ?, ?)`,
-          [
-            generateObjectId(),
-            orderId,
-            item.product_id,
-            item.quantity,
-            item.price,
-          ],
-        );
+      for (const item of orderItemsData) {
+        await OrderItem.create({
+          order_id: order._id,
+          product_id: item.product_id,
+          quantity: item.quantity,
+          price: item.price,
+        } as any);
       }
     }
     console.log("Sample orders seeded.");
@@ -485,101 +480,116 @@ async function seedOrdersFn(connection: any) {
 }
 
 export const seed = async () => {
-  const connection = await pool.getConnection();
-
   try {
     console.log("Starting seed process...");
+    await sequelize.authenticate();
 
     // Generate products
     const seedProducts = generateProducts(100);
     console.log(`Generated ${seedProducts.length} products.`);
 
     // Seed users
-    await seedUsersFn(connection);
+    await seedUsersFn();
     console.log("Users seeded.");
 
-    // Robust product code generation: get max code from DB
-    const [maxCodeRows] = await connection.query<any[]>(
-      `SELECT code FROM products WHERE code LIKE 'P%' ORDER BY code DESC LIMIT 1`,
-    );
+    const lastProduct = await Product.findOne({
+      where: { code: { [Op.like]: "P%" } },
+      order: [["code", "DESC"]],
+      attributes: ["code"],
+    });
+
     let lastNumber = 0;
-    if (maxCodeRows.length > 0) {
-      const lastCode = maxCodeRows[0].code;
-      // Extract numeric part: e.g., P26001 -> 001
-      const match = lastCode.match(/^P\d{2}(\d{3})$/);
+    if (lastProduct) {
+      const match = /^P\d{2}(\d{3})$/.exec(lastProduct.code);
       if (match) {
         lastNumber = Number.parseInt(match[1], 10);
       }
     }
+
     for (let i = 0; i < seedProducts.length; i++) {
       const product = seedProducts[i];
       const code = generateCode(lastNumber + i, "P");
-      await connection.query<ResultSetHeader>(
-        `INSERT INTO products (_id, code, name, description, price, category, subcategory, image, stock, sizes, colors)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE code=code`,
-        [
-          generateObjectId(),
+
+      const existingProduct = await Product.findOne({ where: { code } });
+      if (!existingProduct) {
+        await Product.create({
           code,
-          product.name,
-          product.description,
-          product.price,
-          product.category,
-          product.subcategory,
-          product.image,
-          product.stock,
-          JSON.stringify(product.sizes),
-          JSON.stringify(product.colors),
-        ],
-      );
+          name: product.name,
+          description: product.description,
+          price: product.price,
+          category: product.category,
+          subcategory: product.subcategory,
+          image: product.image,
+          stock: product.stock,
+          sizes: JSON.stringify(product.sizes),
+          colors: JSON.stringify(product.colors),
+        } as any);
+      }
     }
     console.log("Products seeded.");
 
     // Seed inventory for each product
-    const [allProducts] = await connection.query<any[]>(
-      `SELECT _id FROM products`,
-    );
+    const allProducts = await Product.findAll({ attributes: ["_id"] });
     for (let i = 0; i < allProducts.length; i++) {
-      const invId = generateObjectId();
       const invCode = generateCode(i, "I");
       const productId = allProducts[i]._id;
       const quantity = Math.floor(Math.random() * 50) + 1;
       const location = `Warehouse ${(i % 3) + 1}`;
-      await connection.query<ResultSetHeader>(
-        `INSERT INTO inventory (_id, code, product_id, quantity, location)
-         VALUES (?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE code=code`,
-        [invId, invCode, productId, quantity, location],
-      );
+
+      const existingInv = await Inventory.findOne({ where: { code: invCode } });
+      if (!existingInv) {
+        await Inventory.create({
+          code: invCode,
+          product_id: productId,
+          quantity: quantity,
+          location: location
+        } as any);
+      }
     }
     console.log("Inventory seeded.");
 
     // Seed site_info
-    await connection.query(
-      `INSERT INTO site_info (name, description, email, phone, store_logo, favicon, address, facebook, instagram, tik_tok, meta_description)
-       VALUES ('Pinky Clothing Shop', 'A modern clothing shop for all your fashion needs.', 'info@pinkyshop.com', '+855 12 345 678', '/imgs/logo.png', '/imgs/favicon.png', '123 Fashion St, Phnom Penh, Cambodia', 'https://facebook.com/pinkyshop', 'https://instagram.com/pinkyshop', 'https://tiktok.com/@pinkyshop', 'Best fashion shop in Cambodia')
-       ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), email=VALUES(email), phone=VALUES(phone), store_logo=VALUES(store_logo), favicon=VALUES(favicon), address=VALUES(address), facebook=VALUES(facebook), instagram=VALUES(instagram), tik_tok=VALUES(tik_tok), meta_description=VALUES(meta_description)`,
-    );
+    const siteData = {
+      name: 'Pinky Clothing Shop',
+      description: 'A modern clothing shop for all your fashion needs.',
+      email: 'info@pinkyshop.com',
+      phone: '+855 12 345 678',
+      store_logo: '/imgs/logo.png',
+      favicon: '/imgs/favicon.png',
+      address: '123 Fashion St, Phnom Penh, Cambodia',
+      facebook: 'https://facebook.com/pinkyshop',
+      instagram: 'https://instagram.com/pinkyshop',
+      tik_tok: 'https://tiktok.com/@pinkyshop',
+      meta_description: 'Best fashion shop in Cambodia'
+    };
+
+    const siteInfo = await SiteInfo.findOne({ where: { name: siteData.name } });
+    if (siteInfo) {
+      await siteInfo.update(siteData);
+    } else {
+      await SiteInfo.create(siteData as any);
+    }
     console.log("Site info seeded.");
 
     // Seed sample orders
-    await seedOrdersFn(connection);
+    await seedOrdersFn();
+
   } catch (error) {
     console.error("Seed failed:", error);
     throw error;
-  } finally {
-    connection.release();
   }
 };
 
 // Run seed if this file is executed directly
 if (require.main === module) {
-  seed()
-    .then(() => {
+  // eslint-disable-next-line unicorn/prefer-top-level-await
+  void (async () => {
+    try {
+      await seed();
       process.exit(0);
-    })
-    .catch((error) => {
+    } catch (error) {
       console.error(error);
       process.exit(1);
-    });
+    }
+  })();
 }

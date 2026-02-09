@@ -11,14 +11,3 @@ export const pool = mysql.createPool({
   connectionLimit: 10,
   queueLimit: 0,
 });
-
-export const testConnection = async () => {
-  try {
-    const connection = await pool.getConnection();
-    connection.release();
-    return true;
-  } catch (error) {
-    console.error(error);
-    return false;
-  }
-};

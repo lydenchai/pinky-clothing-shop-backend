@@ -1,10 +1,10 @@
 import { Request, Response } from "express";
-import { pool } from "../config/database";
-import { RowDataPacket, ResultSetHeader } from "mysql2";
 import { body, validationResult } from "express-validator";
 import { AuthRequest } from "../middleware/auth.middleware";
 import { generateCode } from "../utils/code.util";
 import { generateObjectId } from "../utils/objectid.util";
+import { Product } from "../models/Product";
+import { Op, WhereOptions } from "sequelize";
 
 // Validation rules for creating/updating a product
 export const productValidation = [
@@ -20,54 +20,6 @@ export const productValidation = [
   body("subcategory").optional().isString(),
 ];
 
-// Helper to build filters for getAllProducts
-function buildProductFilters(queryObj: any) {
-  let { code, category, subcategory, minPrice, maxPrice, search, inStock, q } =
-    queryObj;
-  if (!search && q) search = q;
-
-  let query = "SELECT * FROM products WHERE 1=1";
-  const params: any[] = [];
-
-  if (
-    code &&
-    (typeof code === "string" || typeof code === "number") &&
-    code !== ""
-  ) {
-    query += " AND code LIKE ?";
-    params.push(`%${code}%`);
-  }
-  if (category) {
-    query += " AND LOWER(category) = LOWER(?)";
-    params.push(category);
-  }
-  if (subcategory) {
-    query += " AND LOWER(subcategory) = LOWER(?)";
-    params.push(subcategory);
-  }
-  if (minPrice) {
-    query += " AND price >= ?";
-    params.push(Number.parseFloat(minPrice as string));
-  }
-  if (maxPrice) {
-    query += " AND price <= ?";
-    params.push(Number.parseFloat(maxPrice as string));
-  }
-  if (search) {
-    let searchStr = "";
-    if (typeof search === "string" || typeof search === "number") {
-      searchStr = String(search);
-    }
-    const searchTerm = `%${searchStr}%`;
-    query += " AND (code LIKE ? OR name LIKE ?)";
-    params.push(searchTerm, searchTerm);
-  }
-  if (inStock === "true") {
-    query += " AND stock > 0";
-  }
-  return { query, params };
-}
-
 // Helper to calculate discounted price
 function getDiscountedPrice(product: any) {
   const now = new Date();
@@ -78,12 +30,12 @@ function getDiscountedPrice(product: any) {
     (!product.discount_end || new Date(product.discount_end) >= now)
   ) {
     if (product.discount_type === "percentage") {
-      return Math.max(0, product.price * (1 - product.discount_value / 100));
+      return Math.max(0, Number(product.price) * (1 - Number(product.discount_value) / 100));
     } else if (product.discount_type === "fixed") {
-      return Math.max(0, product.price - product.discount_value);
+      return Math.max(0, Number(product.price) - Number(product.discount_value));
     }
   }
-  return product.price;
+  return Number(product.price);
 }
 
 // Helper to parse array fields robustly
@@ -93,8 +45,7 @@ function parseArrayField(field: any) {
     try {
       const parsed = JSON.parse(field);
       if (Array.isArray(parsed)) return parsed;
-    } catch (e) {
-      console.error(e);
+    } catch {
       if (field.includes(",")) {
         return field
           .split(",")
@@ -114,47 +65,74 @@ export const getAllProducts = async (req: Request, res: Response) => {
     const itemsPerPage = Number.parseInt(limit as string) || 15;
     const offset = (currentPage - 1) * itemsPerPage;
 
-    const { query, params } = buildProductFilters(req.query);
+    let { code, category, subcategory, minPrice, maxPrice, search, inStock, q } = req.query;
+    if (!search && q) search = q;
 
-    // Get total count for pagination
-    const countQuery = query.replace("SELECT *", "SELECT COUNT(*) as total");
-    const [countResult] = await pool.query<RowDataPacket[]>(countQuery, params);
-    const totalItems = countResult[0].total;
-    const totalPages = Math.ceil(totalItems / itemsPerPage);
+    const whereClause: WhereOptions = {};
 
-    // Add pagination to query
-    const paginatedQuery = query + " ORDER BY created_at DESC LIMIT ? OFFSET ?";
-    const paginatedParams = [...params, itemsPerPage, offset];
+    if (code && typeof code === "string" && code.trim() !== "") {
+      whereClause["code" as any] = { [Op.like]: `%${code}%` };
+    }
 
-    const [products] = await pool.query<RowDataPacket[]>(
-      paginatedQuery,
-      paginatedParams,
-    );
+    if (category) {
+      whereClause["category" as any] = category;
+    }
 
-    const productsWithParsedFields = products.map((p) => {
-      const price =
-        p.price !== undefined && p.price !== null
-          ? Number.parseFloat(p.price)
-          : p.price;
-      let discounted_price = getDiscountedPrice({ ...p, price });
-      discounted_price =
-        Math.round(Number.parseFloat(discounted_price) * 100) / 100;
+    if (subcategory) {
+      whereClause["subcategory" as any] = subcategory;
+    }
+
+    if (minPrice) {
+      whereClause["price" as any] = { ...whereClause["price" as any], [Op.gte]: Number.parseFloat(minPrice as string) };
+    }
+
+    if (maxPrice) {
+      whereClause["price" as any] = { ...whereClause["price" as any], [Op.lte]: Number.parseFloat(maxPrice as string) };
+    }
+
+    if (search && typeof search === "string" && search.trim() !== "") {
+      const searchStr = search.trim();
+      (whereClause as any)[Op.or] = [
+        { code: { [Op.like]: `%${searchStr}%` } },
+        { name: { [Op.like]: `%${searchStr}%` } }
+      ];
+    }
+
+    if (inStock === "true") {
+      whereClause["stock" as any] = { [Op.gt]: 0 };
+    }
+
+    const { count, rows } = await Product.findAndCountAll({
+      where: whereClause,
+      limit: itemsPerPage,
+      offset: offset,
+      order: [["created_at", "DESC"]],
+    });
+
+    const productsWithParsedFields = rows.map((p) => {
+      const productData = p.toJSON(); // Convert Sequelize instance to plain object
+      const price = Number(productData.price);
+
+      let discounted_price = getDiscountedPrice({ ...productData, price });
+      discounted_price = Math.round(discounted_price * 100) / 100;
+
       return {
-        ...p,
+        ...productData,
         price,
         discounted_price,
-        sizes: parseArrayField(p.sizes),
-        colors: parseArrayField(p.colors),
+        sizes: parseArrayField(productData.sizes),
+        colors: parseArrayField(productData.colors),
       };
     });
+
     res.json({
       success: true,
       data: productsWithParsedFields,
       pagination: {
         page: currentPage,
         limit: itemsPerPage,
-        totalItems,
-        totalPages,
+        totalItems: count,
+        totalPages: Math.ceil(count / itemsPerPage),
       },
     });
   } catch (error) {
@@ -167,30 +145,21 @@ export const getAllProducts = async (req: Request, res: Response) => {
 export const getProductById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const [products] = await pool.query<RowDataPacket[]>(
-      "SELECT * FROM products WHERE _id = ?",
-      [id],
-    );
-    if (products.length === 0) {
+    const productInstance = await Product.findByPk(id);
+    if (!productInstance) {
       return res.status(404).json({ data: null, message: "Product not found" });
     }
-    // Ensure price is float and sizes/colors are arrays in response, robust to legacy/corrupt data
-    // Use shared helper to avoid duplicate logic
-    // Use the shared parseArrayField helper
-    const product = products[0];
-    if (product) {
-      if (product.price !== undefined && product.price !== null) {
-        product.price = Number.parseFloat(product.price);
-      }
-      let discounted_price = getDiscountedPrice(product);
-      if (discounted_price !== undefined && discounted_price !== null) {
-        discounted_price =
-          Math.round(Number.parseFloat(discounted_price) * 100) / 100;
-      }
-      product.discounted_price = discounted_price;
-      product.sizes = parseArrayField(product.sizes);
-      product.colors = parseArrayField(product.colors);
+    const product = productInstance.toJSON();
+    if (product.price !== undefined && product.price !== null) {
+      product.price = Number.parseFloat(product.price);
     }
+    let discounted_price = getDiscountedPrice(product);
+    if (discounted_price !== undefined && discounted_price !== null) {
+      product.discounted_price = Math.round(discounted_price * 100) / 100;
+    }
+    product.sizes = parseArrayField(product.sizes);
+    product.colors = parseArrayField(product.colors);
+
     res.json({ success: true, data: product });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
@@ -231,67 +200,50 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
         details: { name, description, price, category, image },
       });
     }
+
     const _id = req.body._id || generateObjectId();
-    const productCode = code.trim() ?? generateCode(0, "P");
+    const productCode = code?.trim() || generateCode(0, "P");
+
     // Ensure sizes and colors are never undefined
-    const safeSizes = sizes === undefined ? null : sizes;
-    const safeColors = colors === undefined ? null : colors;
-    try {
-      const values = [
-        _id,
-        productCode,
-        name,
-        description,
-        price,
-        category,
-        subcategory || null,
-        image,
-        stock || 0,
-        safeSizes,
-        safeColors,
-      ];
-      console.log("Product INSERT values:", values);
-      await pool.query<ResultSetHeader>(
-        `INSERT INTO products (_id, code, name, description, price, category, subcategory, image, stock, sizes, colors)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        values,
-      );
-    } catch (dbError) {
-      console.error("DB Insert Error:", dbError);
-      return res
-        .status(500)
-        .json({ error: "Database Error", details: dbError });
+    // For Sequelize, if we pass arrays, we might need to stringify them if the column is string
+    // The current logic expects them to be stored.
+    // If they come as arrays, we should probably JSON.stringify them if using TEXT/VARCHAR.
+    let safeSizes = sizes;
+    if (Array.isArray(sizes)) {
+      safeSizes = JSON.stringify(sizes);
     }
-    try {
-      const [products] = await pool.query<RowDataPacket[]>(
-        "SELECT * FROM products WHERE _id = ?",
-        [_id],
-      );
-      // Ensure price is float and sizes/colors are arrays in response, robust to legacy/corrupt data
-      const product = products[0];
-      if (product) {
-        if (product.price !== undefined && product.price !== null) {
-          product.price = Number.parseFloat(product.price);
-        }
-        let discounted_price = getDiscountedPrice(product);
-        if (discounted_price !== undefined && discounted_price !== null) {
-          discounted_price =
-            Math.round(Number.parseFloat(discounted_price) * 100) / 100;
-        }
-        product.discounted_price = discounted_price;
-        product.sizes = parseArrayField(product.sizes);
-        product.colors = parseArrayField(product.colors);
-      }
-      res.status(201).json({ data: product, success: true });
-    } catch (dbError) {
-      console.error("DB Select Error:", dbError);
-      return res
-        .status(500)
-        .json({ error: "Database Error", details: dbError });
+
+    let safeColors = colors;
+    if (Array.isArray(colors)) {
+      safeColors = JSON.stringify(colors);
     }
-  } catch (error) {
+
+    const newProduct = await Product.create({
+      _id,
+      code: productCode,
+      name,
+      description,
+      price,
+      category,
+      subcategory: subcategory || null,
+      image,
+      stock: stock || 0,
+      sizes: safeSizes,
+      colors: safeColors
+    });
+
+    // Prepare response
+    const product = newProduct.toJSON();
+    product.price = Number.parseFloat(product.price);
+    let discounted_price = getDiscountedPrice(product);
+    product.discounted_price = Math.round(discounted_price * 100) / 100;
+    product.sizes = parseArrayField(product.sizes);
+    product.colors = parseArrayField(product.colors);
+
+    res.status(201).json({ data: product, success: true });
+  } catch (error: any) {
     console.error("Create Product Error:", error);
-    res.status(500).json({ error: "Internal Server Error", details: error });
+    res.status(500).json({ error: "Internal Server Error", details: error.message });
   }
 };
 
@@ -315,69 +267,65 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
       colors,
     } = req.body;
 
-    // Convert discount_start and discount_end to MySQL DATETIME format if present
-    function toMySQLDatetime(val: any) {
-      if (!val) return null;
-      const d = new Date(val);
-      if (Number.isNaN(d.getTime())) return null;
-      // YYYY-MM-DD HH:MM:SS
-      return d.toISOString().slice(0, 19).replace("T", " ");
-    }
-    discount_start = toMySQLDatetime(discount_start);
-    discount_end = toMySQLDatetime(discount_end);
     // If a file was uploaded, use its path for image
     if (req.file) {
       image = req.file.path;
     }
-    // Convert arrays to comma-separated strings if needed
+
+    // Arrays to string
     if (Array.isArray(sizes)) {
-      sizes = sizes.join(",");
+      sizes = JSON.stringify(sizes); // Changed from join(',') to JSON.stringify to be consistent with new create logic, or keep join(',') if that's what front end expects in legacy
+      // If the helper `parseArrayField` tries JSON.parse first, JSON.stringify is safer.
+      // But let's check parseArrayField: it tries JSON.parse, then falls back to split(,).
+      // So JSON.stringify is better.
     }
     if (Array.isArray(colors)) {
-      colors = colors.join(",");
+      colors = JSON.stringify(colors);
     }
-    const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE products SET name = ?, description = ?, price = ?, discount_type = ?, discount_value = ?, discount_start = ?, discount_end = ?, category = ?, subcategory = ?, image = ?, stock = ?, sizes = ?, colors = ?
-       WHERE _id = ?`,
-      [
-        name,
-        description,
-        price,
-        discount_type || null,
-        discount_value || null,
-        discount_start || null,
-        discount_end || null,
-        category,
-        subcategory || null,
-        image,
-        stock,
-        sizes || null,
-        colors || null,
-        id,
-      ],
-    );
-    if (result.affectedRows === 0) {
+
+    const updates: any = {
+      name,
+      description,
+      price,
+      discount_type: discount_type || null,
+      discount_value: discount_value || null,
+      discount_start: discount_start || null,
+      discount_end: discount_end || null,
+      category,
+      subcategory: subcategory || null,
+      image,
+      stock,
+      sizes: sizes || null,
+      colors: colors || null,
+    };
+
+    // Remove undefined keys
+    Object.keys(updates).forEach(key => updates[key] === undefined && delete updates[key]);
+
+    const [affectedRows] = await Product.update(updates, {
+      where: { _id: id }
+    });
+
+    if (affectedRows === 0) {
+      // Check if exists
+      const exists = await Product.findByPk(id);
+      if (!exists) {
+        return res.status(404).json({ data: null, message: "Product not found" });
+      }
+    }
+
+    const updatedProductInstance = await Product.findByPk(id);
+    if (!updatedProductInstance) {
       return res.status(404).json({ data: null, message: "Product not found" });
     }
-    const [products] = await pool.query<RowDataPacket[]>(
-      "SELECT * FROM products WHERE _id = ?",
-      [id],
-    );
-    // Ensure price is float and sizes/colors are arrays in response, robust to legacy/corrupt data
-    const product = products[0];
-    if (product) {
-      if (product.price !== undefined && product.price !== null) {
-        product.price = Number.parseFloat(product.price);
-      }
-      let discounted_price = getDiscountedPrice(product);
-      if (discounted_price !== undefined && discounted_price !== null) {
-        discounted_price =
-          Math.round(Number.parseFloat(discounted_price) * 100) / 100;
-      }
-      product.discounted_price = discounted_price;
-      product.sizes = parseArrayField(product.sizes);
-      product.colors = parseArrayField(product.colors);
-    }
+
+    const product = updatedProductInstance.toJSON();
+    product.price = Number.parseFloat(product.price);
+    let discounted_price = getDiscountedPrice(product);
+    product.discounted_price = Math.round(discounted_price * 100) / 100;
+    product.sizes = parseArrayField(product.sizes);
+    product.colors = parseArrayField(product.colors);
+
     res.json({ data: product, success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
@@ -389,11 +337,11 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
 export const deleteProduct = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const [result] = await pool.query<ResultSetHeader>(
-      "DELETE FROM products WHERE _id = ?",
-      [id],
-    );
-    if (result.affectedRows === 0) {
+    const affectedRows = await Product.destroy({
+      where: { _id: id }
+    });
+
+    if (affectedRows === 0) {
       return res.status(404).json({ data: null, message: "Product not found" });
     }
     res.json({ data: null, message: "Product deleted successfully" });
@@ -406,11 +354,14 @@ export const deleteProduct = async (req: AuthRequest, res: Response) => {
 // Get distinct categories and subcategories
 export const getCategories = async (req: Request, res: Response) => {
   try {
-    const [categories] = await pool.query<RowDataPacket[]>(
-      "SELECT DISTINCT category FROM products ORDER BY category",
-    );
+    const categories = await Product.findAll({
+      attributes: [
+        [sequelize.fn('DISTINCT', sequelize.col('category')), 'category']
+      ],
+      order: [['category', 'ASC']]
+    });
 
-    res.json({ data: categories.map((c) => c.category), success: true });
+    res.json({ data: categories.map((c: any) => c.category), success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
     console.error(error);
@@ -420,16 +371,21 @@ export const getCategories = async (req: Request, res: Response) => {
 // Get distinct subcategories
 export const getSubcategories = async (req: Request, res: Response) => {
   try {
-    const [subcategories] = await pool.query<RowDataPacket[]>(
-      "SELECT DISTINCT subcategory FROM products ORDER BY subcategory",
-    );
+    const subcategories = await Product.findAll({
+      attributes: [
+        [sequelize.fn('DISTINCT', sequelize.col('subcategory')), 'subcategory']
+      ],
+      order: [['subcategory', 'ASC']]
+    });
 
-    res.json({ data: subcategories.map((c) => c.subcategory), success: true });
+    res.json({ data: subcategories.map((c: any) => c.subcategory), success: true });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
     console.error(error);
   }
 };
+
+import { sequelize } from "../config/sequelize"; // added for getCategories
 
 // Bulk set discount for multiple products
 export const bulkSetDiscount = async (req: AuthRequest, res: Response) => {
@@ -444,25 +400,21 @@ export const bulkSetDiscount = async (req: AuthRequest, res: Response) => {
     if (!Array.isArray(productIds) || productIds.length === 0) {
       return res.status(400).json({ error: "No products selected" });
     }
-    // Convert dates to MySQL DATETIME
-    function toMySQLDatetime(val: any) {
-      if (!val) return null;
-      const d = new Date(val);
-      if (Number.isNaN(d.getTime())) return null;
-      return d.toISOString().slice(0, 19).replace("T", " ");
-    }
-    const discount_start = toMySQLDatetime(discountStart);
-    const discount_end = toMySQLDatetime(discountEnd);
-    const sql = `UPDATE products SET discount_type = ?, discount_value = ?, discount_start = ?, discount_end = ? WHERE _id IN (${productIds.map(() => "?").join(",")})`;
-    const params = [
-      discountType,
-      discountValue,
-      discount_start,
-      discount_end,
-      ...productIds,
-    ];
-    const [result] = await pool.query<ResultSetHeader>(sql, params);
-    res.json({ success: true, affected: result.affectedRows });
+
+    const [affectedRows] = await Product.update({
+      discount_type: discountType,
+      discount_value: discountValue,
+      discount_start: discountStart, // Sequelize handles Date objects
+      discount_end: discountEnd
+    }, {
+      where: {
+        _id: {
+          [Op.in]: productIds
+        }
+      }
+    });
+
+    res.json({ success: true, affected: affectedRows });
   } catch (error) {
     res.status(500).json({ error: "Internal Server Error" });
     console.error(error);

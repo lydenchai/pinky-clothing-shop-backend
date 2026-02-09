@@ -1,34 +1,32 @@
 import { Request, Response } from "express";
-import { pool } from "../config/database";
+import { Shipping } from "../models/Shipping";
 import { generateObjectId } from "../utils/objectid.util";
 import { generateCode } from "../utils/code.util";
+import { Op, WhereOptions } from "sequelize";
 
 // Get all shippings with pagination and search
-function buildShippingSearchClause({ search, code, description, q }: any) {
-  let clause = "";
-  let params: any[] = [];
+function buildShippingWhereClause({ search, code, description, q }: any) {
   let effectiveSearch = search;
   if (!effectiveSearch && q) effectiveSearch = q;
+  const whereClause: WhereOptions = {};
   if (effectiveSearch) {
-    const searchStr =
-      typeof effectiveSearch === "string"
-        ? effectiveSearch
-        : String(effectiveSearch);
-    clause = " WHERE code LIKE ? OR name LIKE ? OR description LIKE ?";
-    const s = `%${searchStr}%`;
-    params = [s, s, s];
+    const s = `%${effectiveSearch}%`;
+    (whereClause as any)[Op.or] = [
+      { code: { [Op.like]: s } },
+      { name: { [Op.like]: s } },
+      { description: { [Op.like]: s } }
+    ];
   }
+
   if (code) {
-    clause += clause ? " AND" : " WHERE";
-    clause += " code LIKE ?";
-    params.push(`%${code}%`);
+    whereClause.code = { [Op.like]: `%${code}%` };
   }
+
   if (description) {
-    clause += clause ? " AND" : " WHERE";
-    clause += " description LIKE ?";
-    params.push(`%${description}%`);
+    whereClause.description = { [Op.like]: `%${description}%` };
   }
-  return { clause, params };
+
+  return whereClause;
 }
 
 // Get all shippings with pagination and search
@@ -38,34 +36,21 @@ export const getAllShippings = async (req: Request, res: Response) => {
     const currentPage = Number.parseInt(page as string) || 1;
     const itemsPerPage = Number.parseInt(limit as string) || 15;
     const offset = (currentPage - 1) * itemsPerPage;
-    const { clause: searchClause, params: searchParams } =
-      buildShippingSearchClause({ search, code, description, q });
-
-    // Total count
-    const [countRows] = await pool.query(
-      `SELECT COUNT(*) as total FROM shippings${searchClause}`,
-      searchParams,
-    );
-    const total =
-      Array.isArray(countRows) && (countRows as any)[0]
-        ? (countRows as any)[0].total
-        : 0;
-    // Paginated rows (fix: order by _id only)
-    const [rows] = await pool.query(
-      `SELECT * FROM shippings
-       ${searchClause}
-       ORDER BY _id DESC
-       LIMIT ? OFFSET ?`,
-      [...searchParams, Number(itemsPerPage), Number(offset)],
-    );
+    const whereClause = buildShippingWhereClause({ search, code, description, q });
+    const { count, rows } = await Shipping.findAndCountAll({
+      where: whereClause,
+      order: [['_id', 'DESC']],
+      limit: itemsPerPage,
+      offset: offset
+    });
     res.json({
       success: true,
       data: rows,
       pagination: {
         page: currentPage,
         limit: itemsPerPage,
-        totalItems: total,
-        totalPages: Math.ceil(total / itemsPerPage),
+        totalItems: count,
+        totalPages: Math.ceil(count / itemsPerPage),
       },
     });
   } catch (error) {
@@ -83,33 +68,13 @@ export const getAllShippings = async (req: Request, res: Response) => {
 // Get shipping by ID
 export const getShippingById = async (req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query("SELECT * FROM shippings WHERE _id = ?", [
-      req.params.id,
-    ]);
-
-    const item = (rows as any[])[0];
+    const item = await Shipping.findByPk(req.params.id);
     if (!item) {
       return res
         .status(404)
-        .json({ success: false, message: "Inventory item not found" });
+        .json({ success: false, message: "Shipping item not found" });
     }
-
-    const shippingItem = {
-      _id: item._id,
-      name: item.name,
-      description: item.description,
-      country: item.country,
-      price: item.price,
-      min_order: item.min_order,
-      max_order: item.max_order,
-      estimated_days: item.estimated_days,
-      active: item.active,
-      product: item.product_id
-        ? { _id: item.product_id, name: item.product_name }
-        : null,
-    };
-
-    res.json({ success: true, data: shippingItem });
+    res.json({ success: true, data: item });
   } catch (err) {
     console.error("getShippingById error:", err);
     res.status(500).json({
@@ -137,27 +102,21 @@ export const createShipping = async (req: Request, res: Response) => {
     // Generate _id if not provided
     const _id = req.body._id || generateObjectId();
     const shippingCode = code?.trim() ? code.trim() : generateCode(0, "S");
-    await pool.query(
-      "INSERT INTO shippings (_id, code, name, description, country, price, min_order, max_order, estimated_days, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [
-        _id,
-        shippingCode,
-        name,
-        description,
-        country,
-        price,
-        min_order,
-        max_order,
-        estimated_days,
-        active,
-      ],
-    );
-    const [rows] = await pool.query("SELECT * FROM shippings WHERE _id = ?", [
+    const newItem = await Shipping.create({
       _id,
-    ]);
+      code: shippingCode,
+      name,
+      description,
+      country,
+      price,
+      min_order,
+      max_order,
+      estimated_days,
+      active
+    });
     res
       .status(201)
-      .json({ data: Array.isArray(rows) ? rows[0] : null, success: true });
+      .json({ data: newItem, success: true });
   } catch (error) {
     console.error("Shipping createShipping error:", error);
     let errorMessage = "Unknown error";
@@ -173,25 +132,14 @@ export const createShipping = async (req: Request, res: Response) => {
 // Update shipping
 export const updateShipping = async (req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query("SELECT * FROM shippings WHERE _id = ?", [
-      req.params.id,
-    ]);
-    const shipping = Array.isArray(rows) && rows[0] ? rows[0] : null;
+    const shipping = await Shipping.findByPk(req.params.id);
     if (!shipping)
       return res
         .status(404)
         .json({ data: null, message: "Shipping not found" });
-    await pool.query("UPDATE shippings SET ? WHERE _id = ?", [
-      req.body,
-      req.params.id,
-    ]);
-    // Return the updated row
-    const [updatedRows] = await pool.query(
-      "SELECT * FROM shippings WHERE _id = ?",
-      [req.params.id],
-    );
+    await shipping.update(req.body);
     res.json({
-      data: Array.isArray(updatedRows) ? updatedRows[0] : null,
+      data: shipping,
       success: true,
     });
   } catch (error) {
@@ -205,15 +153,13 @@ export const updateShipping = async (req: Request, res: Response) => {
 // Delete shipping
 export const deleteShipping = async (req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query("SELECT * FROM shippings WHERE _id = ?", [
-      req.params.id,
-    ]);
-    const shipping = Array.isArray(rows) && rows[0] ? rows[0] : null;
-    if (!shipping)
+    const deletedCount = await Shipping.destroy({
+      where: { _id: req.params.id }
+    });
+    if (deletedCount === 0)
       return res
         .status(404)
         .json({ data: null, message: "Shipping not found" });
-    await pool.query("DELETE FROM shippings WHERE _id = ?", [req.params.id]);
     res.json({
       data: null,
       message: "Shipping deleted successfully",

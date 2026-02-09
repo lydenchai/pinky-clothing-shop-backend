@@ -7,9 +7,11 @@ export interface User {
   password: string;
   first_name: string;
   last_name: string;
+    is_active?: boolean;
+    is_blocked?: boolean;
   address?: Address;
   phone?: string;
-  role?: RoleEnum;
+    role: RoleEnum;
   created_at?: Date;
   updated_at?: Date;
 }

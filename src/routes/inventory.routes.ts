@@ -7,6 +7,8 @@ import {
   updateInventory,
   deleteInventory,
   adjustStock,
+  getInventoryLogs,
+  getStockMovementSummary,
 } from "../controllers/inventory.controller";
 import { authenticate, adminOnly } from "../middleware/auth.middleware";
 
@@ -29,5 +31,11 @@ router.delete("/delete/:id", authenticate, adminOnly, deleteInventory);
 
 // Adjust stock quantity of an inventory item
 router.patch("/update/:id/adjust", authenticate, adminOnly, adjustStock);
+
+// Get inventory movement logs for a given inventory item
+router.get("/:id/logs", authenticate, adminOnly, getInventoryLogs);
+
+// Stock movement summary (admin only)
+router.get("/stock-movement-summary", authenticate, adminOnly, getStockMovementSummary);
 
 export default router;

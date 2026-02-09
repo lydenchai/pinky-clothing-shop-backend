@@ -483,6 +483,8 @@ export const seed = async () => {
   try {
     console.log("Starting seed process...");
     await sequelize.authenticate();
+    // Ensure tables are created/updated from models
+    await sequelize.sync({ alter: true });
 
     // Generate products
     const seedProducts = generateProducts(100);

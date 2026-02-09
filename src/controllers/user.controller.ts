@@ -51,7 +51,7 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
       let addressObj = {};
       try {
         addressObj = user.address ? JSON.parse(user.address) : {};
-      } catch { }
+      } catch {}
       return {
         _id: user._id,
         email: user.email,
@@ -82,29 +82,34 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
 // Create a new user
 export const createUser = async (req: AuthRequest, res: Response) => {
   try {
-    const { email, password, first_name, last_name, address, phone, role } =
-      req.body;
+    const {
+      email,
+      password,
+      first_name,
+      last_name,
+      address,
+      phone,
+      role,
+      is_active,
+      is_blocked,
+    } = req.body;
     let addressJson = null;
     if (address && typeof address === "object") {
       addressJson = JSON.stringify(address);
     } else if (typeof address === "string") {
       addressJson = address;
     }
-    if (!email || !password || !first_name || !last_name) {
-      return res.status(400).json({
-        data: null,
-        message: "Missing required fields",
-      });
+    if (!email || !password || !first_name || !last_name || !role) {
+      return res.status(400).json({ message: "Missing required fields" });
     }
-    const userRole = ["admin", "customer"].includes(role) ? role : "customer";
+    const userRole = ["admin", "staff", "customer"].includes(role)
+      ? role
+      : "customer";
     const existing = await User.findOne({
       where: { email: email.toLowerCase() },
     });
     if (existing) {
-      return res.status(409).json({
-        data: null,
-        message: "Email already exists",
-      });
+      return res.status(409).json({ message: "Email already exists" });
     }
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -115,10 +120,11 @@ export const createUser = async (req: AuthRequest, res: Response) => {
       first_name,
       last_name,
       address: addressJson,
-      phone: phone || null,
+      phone,
       role: userRole,
+      is_active: is_active !== undefined ? is_active : true,
+      is_blocked: is_blocked !== undefined ? is_blocked : false,
     });
-
     // Return created user (exclude password)
     const createdUser = await User.findByPk(newUser._id, {
       attributes: [
@@ -129,6 +135,8 @@ export const createUser = async (req: AuthRequest, res: Response) => {
         "address",
         "phone",
         "role",
+        "is_active",
+        "is_blocked",
         "created_at",
       ],
     });
@@ -152,6 +160,8 @@ export const getUserById = async (req: AuthRequest, res: Response) => {
         "address",
         "phone",
         "role",
+        "is_active",
+        "is_blocked",
         "created_at",
       ],
     });
@@ -163,7 +173,7 @@ export const getUserById = async (req: AuthRequest, res: Response) => {
     let addressObj = {};
     try {
       addressObj = user.address ? JSON.parse(user.address) : {};
-    } catch { }
+    } catch {}
 
     res.json({
       data: {
@@ -226,7 +236,7 @@ const getFormattedUserById = async (id: string) => {
   let addressObj = {};
   try {
     addressObj = user.address ? JSON.parse(user.address) : {};
-  } catch { }
+  } catch {}
 
   return {
     _id: user._id,
@@ -322,15 +332,11 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { role } = req.body;
-    if (!["admin", "customer"].includes(role)) {
+    if (!["admin", "staff", "customer"].includes(role)) {
       return res.status(400).json({ data: null, message: "Invalid role" });
     }
 
-    const [affectedRows] = await User.update(
-      { role },
-      { where: { _id: id } }
-    );
-
+    const [affectedRows] = await User.update({ role }, { where: { _id: id } });
     if (affectedRows === 0) {
       const userExists = await User.findByPk(id);
       if (!userExists) {

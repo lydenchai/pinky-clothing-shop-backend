@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { sendMail } from "../utils/mailer";
 import { body, validationResult } from "express-validator";
 import { AuthRequest } from "../middleware/auth.middleware";
 import { generateObjectId } from "../utils/objectid.util";
@@ -42,7 +43,9 @@ function buildOrderWhereClause(query: any) {
     if (typeof code === "string") {
       whereClause["code" as any] = { [Op.like]: `%${code}%` };
     } else if (Array.isArray(code)) {
-      whereClause["code" as any] = { [Op.or]: code.map(c => ({ [Op.like]: `%${c}%` })) };
+      whereClause["code" as any] = {
+        [Op.or]: code.map((c) => ({ [Op.like]: `%${c}%` })),
+      };
     }
   }
 
@@ -55,8 +58,8 @@ function buildOrderWhereClause(query: any) {
     // Use cast to any to avoid symbol index error with strict alignment
     (whereClause as any)[Op.or] = [
       { code: { [Op.like]: s } },
-      { '$user.first_name$': { [Op.like]: s } },
-      { '$user.last_name$': { [Op.like]: s } }
+      { "$user.first_name$": { [Op.like]: s } },
+      { "$user.last_name$": { [Op.like]: s } },
     ];
   }
 
@@ -70,7 +73,10 @@ function formatOrder(orderModel: Order) {
   // Parse address if it is string
   let addressObj = {};
   try {
-    addressObj = typeof order.address === 'string' ? JSON.parse(order.address || "{}") : order.address;
+    addressObj =
+      typeof order.address === "string"
+        ? JSON.parse(order.address || "{}")
+        : order.address;
   } catch {
     addressObj = {};
   }
@@ -84,28 +90,29 @@ function formatOrder(orderModel: Order) {
     size: item.size,
     color: item.color,
     product_name: item.product?.name,
-    product_image: item.product?.image
+    product_image: item.product?.image,
   }));
 
   return {
     _id: order._id,
     code: order.code,
-    user: order.user ? {
-      _id: order.user._id,
-      email: order.user.email,
-      phone: order.user.phone,
-      first_name: order.user.first_name,
-      last_name: order.user.last_name,
-    } : null,
+    user: order.user
+      ? {
+          _id: order.user._id,
+          email: order.user.email,
+          phone: order.user.phone,
+          first_name: order.user.first_name,
+          last_name: order.user.last_name,
+        }
+      : null,
     total_amount: Number(order.total_amount),
     status: order.status,
     address: addressObj,
     created_at: order.created_at,
     updated_at: order.updated_at,
-    items
+    items,
   };
 }
-
 
 // Get all orders (admin only)
 export const getAllOrders = async (req: AuthRequest, res: Response) => {
@@ -122,17 +129,20 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
       include: [
         {
           model: User,
-          attributes: ['_id', 'email', 'phone', 'first_name', 'last_name']
+          attributes: ["_id", "email", "phone", "first_name", "last_name"],
         },
         {
           model: OrderItem,
-          include: [{ model: Product, attributes: ['name', 'image'] }]
-        }
+          include: [{ model: Product, attributes: ["name", "image"] }],
+        },
       ],
       distinct: true, // Important for accurate count with includes
       limit: itemsPerPage,
       offset: offset,
-      order: [['updated_at', 'DESC'], ['_id', 'DESC']]
+      order: [
+        ["updated_at", "DESC"],
+        ["_id", "DESC"],
+      ],
     });
 
     const data = rows.map(formatOrder);
@@ -180,7 +190,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       where: { user_id: req.user_id },
       include: [{ model: Product }],
       lock: true, // FOR UPDATE
-      transaction: t
+      transaction: t,
     });
 
     if (!cartItems.length) {
@@ -210,7 +220,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         quantity: item.quantity,
         price: price, // Store price at time of order
         size: item.size || null,
-        color: item.color || null
+        color: item.color || null,
       });
 
       // Update stock
@@ -219,14 +229,17 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     }
 
     // Create order
-    await Order.create({
-      _id: order_id,
-      code: order_code,
-      user_id: req.user_id,
-      total_amount: total_amount,
-      status: 'pending',
-      address: addressJson
-    }, { transaction: t });
+    await Order.create(
+      {
+        _id: order_id,
+        code: order_code,
+        user_id: req.user_id,
+        total_amount: total_amount,
+        status: "pending",
+        address: addressJson,
+      },
+      { transaction: t },
+    );
 
     // Create order items
     await OrderItem.bulkCreate(orderItemsData, { transaction: t });
@@ -234,16 +247,14 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     // Clear cart
     await CartItem.destroy({
       where: { user_id: req.user_id },
-      transaction: t
+      transaction: t,
     });
 
     await t.commit();
 
     // Fetch created order to return full details
     const order = await Order.findByPk(order_id, {
-      include: [
-        { model: OrderItem, include: [Product] }
-      ]
+      include: [{ model: OrderItem, include: [Product] }],
     });
 
     if (!order) throw new Error("Order creation failed");
@@ -258,7 +269,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     // Let's add user_id to result
     const result: any = {
       ...responseOrder,
-      user_id: req.user_id
+      user_id: req.user_id,
     };
 
     res.status(201).json({ data: result, success: true });
@@ -275,7 +286,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 export const getOrders = async (req: AuthRequest, res: Response) => {
   try {
     const user = await User.findByPk(req.user_id);
-    const isAdmin = user?.role === 'admin';
+    const isAdmin = user?.role === "admin";
 
     let { page, limit } = req.query;
     const currentPage = Number.parseInt(page as string) || 1;
@@ -292,17 +303,20 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
       include: [
         {
           model: User,
-          attributes: ['_id', 'email', 'phone', 'first_name', 'last_name']
+          attributes: ["_id", "email", "phone", "first_name", "last_name"],
         },
         {
           model: OrderItem,
-          include: [{ model: Product, attributes: ['name', 'image'] }]
-        }
+          include: [{ model: Product, attributes: ["name", "image"] }],
+        },
       ],
       distinct: true,
       limit: itemsPerPage,
       offset: offset,
-      order: [['updated_at', 'DESC'], ['_id', 'DESC']]
+      order: [
+        ["updated_at", "DESC"],
+        ["_id", "DESC"],
+      ],
     });
 
     const data = rows.map(formatOrder);
@@ -317,7 +331,6 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
         totalPages: Math.ceil(count / itemsPerPage),
       },
     });
-
   } catch (error) {
     console.error("getOrders error:", error);
     res.status(500).json({ success: false, error: "Internal Server Error" });
@@ -329,7 +342,7 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const user = await User.findByPk(req.user_id);
-    const isAdmin = user?.role === 'admin';
+    const isAdmin = user?.role === "admin";
 
     const where: WhereOptions = { _id: id };
     if (!isAdmin) {
@@ -341,13 +354,13 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
       include: [
         {
           model: User,
-          attributes: ['_id', 'email', 'phone', 'first_name', 'last_name']
+          attributes: ["_id", "email", "phone", "first_name", "last_name"],
         },
         {
           model: OrderItem,
-          include: [{ model: Product, attributes: ['name', 'image'] }]
-        }
-      ]
+          include: [{ model: Product, attributes: ["name", "image"] }],
+        },
+      ],
     });
 
     if (!order) {
@@ -378,14 +391,19 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     }
 
     const user = await User.findByPk(req.user_id);
-    const isAdmin = user?.role === 'admin';
+    const isAdmin = user?.role === "admin";
 
     const where: WhereOptions = { _id: id };
     if (!isAdmin) {
       where["user_id" as any] = req.user_id;
     }
 
-    const order = await Order.findOne({ where });
+    const order = await Order.findOne({
+      where,
+      include: [
+        { model: User, attributes: ["email", "first_name", "last_name"] },
+      ],
+    });
 
     if (!order) {
       return res
@@ -397,17 +415,33 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     order.updated_at = new Date(); // Explicitly update updated_at if needed, though Sequelize handles it
     await order.save();
 
+    // Send email notification to user if email exists
+    if (order.user && order.user.email) {
+      try {
+        await sendMail({
+          to: order.user.email,
+          subject: `Order #${order.code} status updated to ${status}`,
+          html: `<p>Dear ${order.user.first_name || ""},</p>
+            <p>Your order <b>#${order.code}</b> status has been updated to <b>${status.toUpperCase()}</b>.</p>
+            <p>Thank you for shopping with us!</p>`,
+        });
+      } catch (mailErr) {
+        // Log but do not block order update
+        console.error("Failed to send order status email:", mailErr);
+      }
+    }
     // Fetch full order for response
     const updatedOrder = await Order.findByPk(id, {
       include: [
         {
           model: OrderItem,
-          include: [{ model: Product, attributes: ['name', 'image'] }]
-        }
-      ]
+          include: [{ model: Product, attributes: ["name", "image"] }],
+        },
+      ],
     });
 
-    if (!updatedOrder) return res.status(404).json({ error: "Order not found" });
+    if (!updatedOrder)
+      return res.status(404).json({ error: "Order not found" });
 
     // Format response to match original logic
     const formatted = formatOrder(updatedOrder);
@@ -448,8 +482,9 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
 
     if (req.body.address) {
       const a = req.body.address;
-      shipping_address = `${a.house || ""} ${a.street || ""} ${a.village || ""
-        } ${a.commune || ""} ${a.district || ""} ${a.province || ""}`.trim();
+      shipping_address = `${a.house || ""} ${a.street || ""} ${
+        a.village || ""
+      } ${a.commune || ""} ${a.district || ""} ${a.province || ""}`.trim();
       shipping_city = a.province || "";
       shipping_postal_code = a.postal_code || "";
       shipping_country = a.country || "Cambodia";
@@ -466,7 +501,7 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
 
     const cartItems = await CartItem.findAll({
       where: { user_id: req.user_id },
-      include: [{ model: Product }]
+      include: [{ model: Product }],
     });
 
     if (cartItems.length === 0) {
@@ -476,46 +511,53 @@ export const orderSummary = async (req: AuthRequest, res: Response) => {
     let subtotal = 0;
     const outOfStock: any[] = [];
 
-    const items = cartItems.map((item) => {
-      const product = item.product;
-      // Should not happen if data integrity is fine
-      if (!product) return null;
+    const items = cartItems
+      .map((item) => {
+        const product = item.product;
+        // Should not happen if data integrity is fine
+        if (!product) return null;
 
-      if (product.stock < item.quantity) {
-        outOfStock.push({
+        if (product.stock < item.quantity) {
+          outOfStock.push({
+            product_id: item.product_id,
+            product_name: product.name,
+          });
+        }
+
+        const price = Number(product.price);
+        const discount_value = product.discount_value
+          ? Number(product.discount_value)
+          : null;
+
+        let discounted_price = price;
+        if (product.discount_type === "percentage" && discount_value !== null) {
+          discounted_price = price * (1 - discount_value / 100);
+        } else if (
+          product.discount_type === "fixed" &&
+          discount_value !== null
+        ) {
+          discounted_price = price - discount_value;
+        }
+
+        subtotal += discounted_price * item.quantity;
+
+        return {
           product_id: item.product_id,
           product_name: product.name,
-        });
-      }
-
-      const price = Number(product.price);
-      const discount_value = product.discount_value ? Number(product.discount_value) : null;
-
-      let discounted_price = price;
-      if (product.discount_type === "percentage" && discount_value !== null) {
-        discounted_price = price * (1 - discount_value / 100);
-      } else if (product.discount_type === "fixed" && discount_value !== null) {
-        discounted_price = price - discount_value;
-      }
-
-      subtotal += discounted_price * item.quantity;
-
-      return {
-        product_id: item.product_id,
-        product_name: product.name,
-        product_image: product.image,
-        quantity: item.quantity,
-        price: price,
-        discounted_price,
-        discount_type: product.discount_type,
-        discount_value,
-        discount_start: product.discount_start,
-        discount_end: product.discount_end,
-        size: item.size,
-        color: item.color,
-        stock: product.stock,
-      };
-    }).filter(Boolean); // Filter out nulls
+          product_image: product.image,
+          quantity: item.quantity,
+          price: price,
+          discounted_price,
+          discount_type: product.discount_type,
+          discount_value,
+          discount_start: product.discount_start,
+          discount_end: product.discount_end,
+          size: item.size,
+          color: item.color,
+          stock: product.stock,
+        };
+      })
+      .filter(Boolean); // Filter out nulls
 
     if (outOfStock.length > 0) {
       return res
@@ -570,7 +612,7 @@ export const getOrderSummary = async (req: AuthRequest, res: Response) => {
 
     const cartItems = await CartItem.findAll({
       where: { user_id: req.user_id },
-      include: [{ model: Product }]
+      include: [{ model: Product }],
     });
 
     if (cartItems.length === 0) {
@@ -579,37 +621,44 @@ export const getOrderSummary = async (req: AuthRequest, res: Response) => {
 
     let subtotal = 0;
 
-    const items = cartItems.map((item) => {
-      const product = item.product;
-      if (!product) return null;
+    const items = cartItems
+      .map((item) => {
+        const product = item.product;
+        if (!product) return null;
 
-      const price = Number(product.price);
-      const discount_value = product.discount_value ? Number(product.discount_value) : null;
+        const price = Number(product.price);
+        const discount_value = product.discount_value
+          ? Number(product.discount_value)
+          : null;
 
-      let discounted_price = price;
-      if (product.discount_type === "percentage" && discount_value !== null) {
-        discounted_price = price * (1 - discount_value / 100);
-      } else if (product.discount_type === "fixed" && discount_value !== null) {
-        discounted_price = price - discount_value;
-      }
+        let discounted_price = price;
+        if (product.discount_type === "percentage" && discount_value !== null) {
+          discounted_price = price * (1 - discount_value / 100);
+        } else if (
+          product.discount_type === "fixed" &&
+          discount_value !== null
+        ) {
+          discounted_price = price - discount_value;
+        }
 
-      subtotal += discounted_price * item.quantity;
+        subtotal += discounted_price * item.quantity;
 
-      return {
-        product_id: item.product_id,
-        product_name: product.name,
-        product_image: product.image,
-        quantity: item.quantity,
-        price: price,
-        discounted_price,
-        discount_type: product.discount_type,
-        discount_value,
-        discount_start: product.discount_start,
-        discount_end: product.discount_end,
-        size: item.size,
-        color: item.color,
-      };
-    }).filter(Boolean);
+        return {
+          product_id: item.product_id,
+          product_name: product.name,
+          product_image: product.image,
+          quantity: item.quantity,
+          price: price,
+          discounted_price,
+          discount_type: product.discount_type,
+          discount_value,
+          discount_start: product.discount_start,
+          discount_end: product.discount_end,
+          size: item.size,
+          color: item.color,
+        };
+      })
+      .filter(Boolean);
 
     const shipping = subtotal > 100 ? 0 : 10;
     const tax = subtotal * 0.08;
@@ -652,17 +701,20 @@ export const getUserOrders = async (req: AuthRequest, res: Response) => {
       include: [
         {
           model: User,
-          attributes: ['_id', 'email', 'phone', 'first_name', 'last_name']
+          attributes: ["_id", "email", "phone", "first_name", "last_name"],
         },
         {
           model: OrderItem,
-          include: [{ model: Product, attributes: ['name', 'image'] }]
-        }
+          include: [{ model: Product, attributes: ["name", "image"] }],
+        },
       ],
       distinct: true,
       limit: itemsPerPage,
       offset: offset,
-      order: [['updated_at', 'DESC'], ['_id', 'DESC']]
+      order: [
+        ["updated_at", "DESC"],
+        ["_id", "DESC"],
+      ],
     });
 
     const data = rows.map(formatOrder);
@@ -677,7 +729,6 @@ export const getUserOrders = async (req: AuthRequest, res: Response) => {
         totalPages: Math.ceil(count / itemsPerPage),
       },
     });
-
   } catch (error) {
     console.error("getUserOrders error:", error);
     res.status(500).json({ success: false, error: "Internal Server Error" });

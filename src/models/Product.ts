@@ -10,7 +10,10 @@ import {
   HasMany,
   AllowNull,
   Default,
+  BelongsToMany,
 } from "sequelize-typescript";
+import { Category } from "./Category";
+import { ProductCategory } from "./ProductCategory";
 import { CartItem } from "./CartItem";
 import { OrderItem } from "./OrderItem";
 import { Inventory } from "./Inventory";
@@ -62,6 +65,14 @@ export class Product extends Model {
   category!: string;
 
   @Column(DataType.STRING(100))
+  supplier!: string; // New: supplier name or id
+
+  @AllowNull(false)
+  @Default("active")
+  @Column(DataType.ENUM("active", "inactive"))
+  status!: "active" | "inactive";
+
+  @Column(DataType.STRING(100))
   subcategory!: string;
 
   @Column(DataType.TEXT("long"))
@@ -96,4 +107,7 @@ export class Product extends Model {
 
   @HasMany(() => Wishlist)
   wishlist!: Wishlist[];
+
+  @BelongsToMany(() => Category, () => ProductCategory)
+  categories!: Category[];
 }

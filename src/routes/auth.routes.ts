@@ -8,7 +8,7 @@ const router = Router();
 router.post(
   "/register",
   authController.registerValidation,
-  authController.register
+  authController.register,
 );
 
 // User login

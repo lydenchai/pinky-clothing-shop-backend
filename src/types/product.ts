@@ -16,6 +16,8 @@ export interface Product {
   stock: number;
   sizes?: string;
   colors?: string;
+  supplier?: string; // New: supplier name or id
+  status?: 'active' | 'inactive'; // New: product status
   address?: Address;
   created_at?: Date;
   updated_at?: Date;

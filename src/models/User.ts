@@ -49,8 +49,16 @@ export class User extends Model {
   phone!: string;
 
   @Default("customer")
-  @Column(DataType.ENUM("admin", "customer"))
-  role!: "admin" | "customer";
+  @Column(DataType.ENUM("admin", "staff", "customer"))
+  role!: "admin" | "staff" | "customer";
+
+  @Default(true)
+  @Column(DataType.BOOLEAN)
+  is_active!: boolean;
+
+  @Default(false)
+  @Column(DataType.BOOLEAN)
+  is_blocked!: boolean;
 
   @CreatedAt
   @Column(DataType.DATE)

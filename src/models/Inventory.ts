@@ -46,6 +46,20 @@ export class Inventory extends Model {
   @Column(DataType.STRING(255))
   location!: string;
 
+  @Column(DataType.STRING(100))
+  supplier!: string;
+
+  @Column(DataType.DATE)
+  expiry_date!: Date | null;
+
+  @Default(5)
+  @Column(DataType.INTEGER)
+  low_stock_threshold!: number;
+
+  @Default(false)
+  @Column(DataType.BOOLEAN)
+  low_stock_alerted!: boolean;
+
   @CreatedAt
   @Column(DataType.DATE)
   created_at!: Date;
